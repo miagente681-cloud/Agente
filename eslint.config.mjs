@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Guiones de recorrida en navegador: CommonJS, fuera del build.
+    "tests/recorrida/**",
   ]),
 ]);
 

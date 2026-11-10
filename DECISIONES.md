@@ -33,3 +33,31 @@ Estas verificaciones se hicieron con búsquedas (la red de la sesión de trabajo
 - **Tipografía Geist servida desde el propio sitio** (paquete `geist`), sin pedidos a Google Fonts.
 - **Un solo color de acento: ámbar `#f5a524`.** Rojo y verde se usan únicamente para estado (vencido, hecho).
 - **Pruebas del esquema con PGlite**: las migraciones se aplican en un Postgres en memoria y se comprueba que RLS aísla a dos usuarios. El esquema `auth` de Supabase se simula con lo mínimo.
+
+## Fase 2 — Proyectos y tareas
+
+La especificación original no llegó en el traspaso (el punto 12 vino con el texto de relleno), así que esta fase se hizo con la descripción del traspaso y las decisiones ya aprobadas. Si la especificación pide algo distinto, se ajusta.
+
+- **Los datos del panel viven en memoria** (`src/lib/datos/almacen.tsx`): se leen una vez de Supabase y cada cambio se ve al instante y después se guarda. Si la base lo rechaza, se avisa y se vuelve a leer todo, en lugar de deshacer a mano cada caso.
+- **Solo los proyectos activos alimentan Hoy, Tablero y Calendario.** Las tareas de proyectos pausados, completados o archivados se ven solo en la ficha del proyecto.
+- **«Esta semana» va de lunes a domingo.** Lo vencido se muestra siempre arriba, en rojo.
+- **Hoy incluye lo que está en curso** aunque no venza hoy: es «lo que toca ahora».
+- **Una tarea cargada desde Hoy o desde un día del Calendario queda con esa fecha.** Desde el Tablero o la ficha queda sin fecha.
+- **Alta en una línea: fecha y prioridad solo al final del texto.** Así «Preparar la reunión de mañana con Ana» no pierde palabras. Un día de la semana es siempre el próximo (nunca hoy); una fecha sin año que ya pasó es del año que viene.
+- **Nombres de prioridad:** P1 Urgente, P2 Alta, P3 Media, P4 Baja. En las listas solo se marcan P1 y P4, para que lo normal no haga ruido.
+- **Tablero:** muestra tareas, no subtareas (la tarjeta trae la cuenta «2/5»). La columna «Hecha» muestra las últimas dos semanas, ordenadas por fecha de cierre. Al mover una tarjeta a «Bloqueada» se abre para anotar qué la traba.
+- **Orden manual con números fraccionarios**: mover una tarjeta escribe una sola fila.
+- **Arrastrar funciona con mouse, dedo y teclado** en el Tablero. En el Calendario solo con mouse (en el celular las celdas son muy chicas); la fecha siempre se puede cambiar desde el detalle.
+- **Completar una tarea no completa sus subtareas** ni al revés. Archivar o borrar una tarea sí se lleva sus subtareas, y mover una tarea de proyecto las mueve con ella.
+- **Archivar se puede deshacer** desde el aviso, o más tarde desde «Archivadas» en la ficha del proyecto. Borrar pide confirmación.
+- **Archivar un área no toca sus proyectos**: pasan a mostrarse como «Sin área».
+- **El filtro por área y proyecto se guarda en el dispositivo** (`localStorage`), no en la base.
+- **En el celular el Calendario se abre desde Hoy** (botón «Mes»), porque en la barra de abajo entran cinco secciones.
+- **Paleta de comandos y atajos de teclado**: quedan para más adelante; no eran necesarios para las cuatro vistas.
+- **Recorrida en navegador sin Playwright en `package.json`**: el guion usa el Playwright de la máquina. Se agregará como dependencia cuando haya pruebas de punta a punta en la integración continua.
+- **Librería nueva:** dnd-kit (`@dnd-kit/core` y `@dnd-kit/sortable`), prevista en el plan.
+
+## Despliegue
+
+- **Proyecto de Vercel `miagente`** (equipo MiAgente), enlazado a `miagente681-cloud/Agente`. El repo estaba vacío: el código de la fase 1 se trajo desde `Emontone21/MiAg` con su historial.
+- **La rama de producción es `claude/pensive-galileo-w7i9nk`** porque fue la primera que se subió. Conviene crear `main` y pasar la producción ahí cuando se revise este trabajo.
