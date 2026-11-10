@@ -95,6 +95,22 @@ node promo/render.cjs
 
 El resultado queda en `promo/salida/miagente-promo.mp4`. Los textos y los tiempos se cambian en `promo/video.html`.
 
+Para sumarle locución se usa Piper, un motor de voz libre que corre en la máquina (sin servicios externos). Se genera un audio por escena y el video se arma con cada escena durando lo que dura su frase:
+
+```bash
+pip install piper-tts
+```
+
+```bash
+PIPER_MODELO=/ruta/a/la-voz.onnx node promo/locucion.cjs
+```
+
+```bash
+node promo/render.cjs
+```
+
+Con los audios en `promo/locucion/`, el resultado es `promo/salida/miagente-promo-con-voz.mp4`. Las frases están en `promo/locucion.cjs`.
+
 ## Uso rápido del panel
 
 - **Alta en una línea**: escribí la tarea y Enter. Si terminás con `hoy`, `mañana`, un día (`vie`), una fecha (`14/11`) o una prioridad (`p1` a `p4`), se leen solas: `Pintar el cuarto vie p1`.

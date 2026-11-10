@@ -82,9 +82,15 @@
   // Todo el video es una función del tiempo: render(t) deja el cuadro del segundo t.
   // Así se puede capturar cuadro por cuadro, sin depender del reloj.
   const escenas = [...document.querySelectorAll(".escena")];
-  const duraciones = escenas.map((e) => Number(e.dataset.d));
-  const inicios = duraciones.map((_, i) => duraciones.slice(0, i).reduce((a, b) => a + b, 0));
-  window.DURACION = duraciones.reduce((a, b) => a + b, 0);
+  let duraciones, inicios;
+  // Con locución, cada escena dura lo que dura su frase: los tiempos se pueden cambiar desde afuera.
+  window.configurar = (nuevas) => {
+    duraciones = nuevas;
+    inicios = duraciones.map((_, i) => duraciones.slice(0, i).reduce((a, b) => a + b, 0));
+    window.DURACION = duraciones.reduce((a, b) => a + b, 0);
+    return inicios;
+  };
+  window.configurar(escenas.map((e) => Number(e.dataset.d)));
   const suave = (x) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
   const ENTRA = 0.55, SALE = 0.4;
 
