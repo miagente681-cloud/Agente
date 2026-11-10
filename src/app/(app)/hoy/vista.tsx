@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { EstadoDatos, Filtro } from "@/components/filtro";
 import { AltaRapida } from "@/components/tareas/alta-rapida";
 import { ListaTareas } from "@/components/tareas/fila-tarea";
@@ -25,7 +26,15 @@ function Seccion({ titulo, tono, tareas }: { titulo: string; tono?: "peligro"; t
 }
 
 export function VistaHoy() {
-  const { estado, hoy, proyectos } = useDatos();
+  const { estado, hoy, proyectos, entrevistaHecha } = useDatos();
+  const router = useRouter();
+
+  // Cuenta nueva y vacía: se empieza por la bienvenida.
+  const esNueva = estado === "listo" && entrevistaHecha === false && proyectos.length === 0;
+  useEffect(() => {
+    if (esNueva) router.replace("/bienvenida");
+  }, [esNueva, router]);
+
   const visibles = useTareasVisibles();
   const [rango, setRango] = useState<Rango>("hoy");
 

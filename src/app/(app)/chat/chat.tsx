@@ -21,6 +21,8 @@ type Item = {
   escribiendo?: boolean;
 };
 
+const HORAS_PARA_CERRAR = 6;
+
 const TITULO: Record<string, string> = {
   chat: "Agente",
   onboarding: "Entrevista inicial",
@@ -96,6 +98,15 @@ export function Chat() {
           sb.from("change_log").select("id,message_id,operation,summary,undone_at").eq("session_id", abierta.id).order("created_at"),
         ]);
         if (!vigente) return;
+        // Una charla abandonada hace horas se cierra sola (así se aprende de ella)
+        // y se empieza una nueva, salvo que se haya pedido esa sesión en particular.
+        const filas = (mensajes.data ?? []) as { created_at: string }[];
+        const ultima = filas.at(-1)?.created_at;
+        if (!pedida && ultima && Date.now() - new Date(ultima).getTime() > HORAS_PARA_CERRAR * 3_600_000) {
+          void fetch(`/api/sesiones/${abierta.id}/cerrar`, { method: "POST" }).catch(() => null);
+          setCargando(false);
+          return;
+        }
         const porMensaje = new Map<string, CambioVista[]>();
         for (const c of (cambios.data ?? []) as (CambioVista & { message_id: string | null })[]) {
           porMensaje.set(c.message_id ?? "", [...(porMensaje.get(c.message_id ?? "") ?? []), c]);

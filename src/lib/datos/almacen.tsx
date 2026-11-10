@@ -50,6 +50,8 @@ export type CambiosProyecto = Partial<
 type Datos = {
   estado: "cargando" | "error" | "listo";
   hoy: string;
+  /** null mientras no se sabe. */
+  entrevistaHecha: boolean | null;
   areas: Area[];
   proyectos: Proyecto[];
   tareas: Tarea[];
@@ -115,6 +117,7 @@ async function leerTodasLasTareas(): Promise<Tarea[]> {
 export function ProveedorDatos({ children }: { children: ReactNode }) {
   const [estado, setEstado] = useState<Datos["estado"]>("cargando");
   const [zona, setZona] = useState(ZONA_POR_DEFECTO);
+  const [entrevistaHecha, setEntrevistaHecha] = useState<boolean | null>(null);
   const [ahora, setAhora] = useState(() => new Date());
   const [areas, setAreas] = useState<Area[]>([]);
   const [proyectos, setProyectos] = useState<Proyecto[]>([]);
@@ -127,13 +130,14 @@ export function ProveedorDatos({ children }: { children: ReactNode }) {
     const supabase = supabaseBrowser();
     try {
       const [perfil, a, p, t] = await Promise.all([
-        supabase.from("profiles").select("timezone").maybeSingle(),
+        supabase.from("profiles").select("timezone,onboarding_done").maybeSingle(),
         supabase.from("areas").select(COLUMNAS_AREA).is("archived_at", null).order("sort_order"),
         supabase.from("projects").select(COLUMNAS_PROYECTO).order("sort_order"),
         leerTodasLasTareas(),
       ]);
       if (a.error || p.error) throw a.error ?? p.error;
       setZona(perfil.data?.timezone ?? ZONA_POR_DEFECTO);
+      setEntrevistaHecha(perfil.data ? Boolean(perfil.data.onboarding_done) : null);
       setAreas(a.data as Area[]);
       setProyectos(p.data as Proyecto[]);
       setTareas(t);
@@ -367,7 +371,7 @@ export function ProveedorDatos({ children }: { children: ReactNode }) {
   );
 
   const valor: Datos = {
-    estado, hoy, areas, proyectos, tareas, filtro, cambiarFiltro, recargar, avisar,
+    estado, hoy, entrevistaHecha, areas, proyectos, tareas, filtro, cambiarFiltro, recargar, avisar,
     crearArea, editarArea, archivarArea,
     crearProyecto, editarProyecto, borrarProyecto,
     crearTarea, editarTarea, archivarTarea, restaurarTarea, borrarTarea,

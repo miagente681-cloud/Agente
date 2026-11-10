@@ -27,7 +27,12 @@ const estado = async () => (await fetch(`${FALSO}/__estado`)).json();
 const sembrar = (tabla, fila) => fetch(`${FALSO}/__sembrar`, { method: "POST", body: JSON.stringify({ tabla, fila }) });
 const guion = (pasos) => fetch(`${MODELOS}/__guion`, { method: "POST", body: JSON.stringify(pasos) });
 const pedidosAlModelo = async () => (await fetch(`${MODELOS}/__pedidos`)).json();
+const editar = (tabla, id, cambios) => fetch(`${FALSO}/__editar`, { method: "POST", body: JSON.stringify({ tabla, id, cambios }) });
 const corto = (id) => id.slice(0, 8);
+// El prompt de sistema de un pedido, sea cual sea el proveedor que lo recibió
+// (después de un 429, Gemini queda en pausa un par de minutos y responde Groq).
+const sistemaDe = (pedido) =>
+  pedido.cuerpo.systemInstruction?.parts[0].text ?? pedido.cuerpo.messages.find((m) => m.role === "system").content;
 const fechaMvd = (dias = 0) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "America/Montevideo" }).format(Date.now() + dias * 86_400_000);
 
@@ -353,6 +358,69 @@ async function main() {
     afirmar((await pagina.getByText("Pendiente", { exact: true }).count()) > 0 && (await pagina.getByText("Configurada", { exact: true }).count()) >= 3,
       "/configurar lista cada integración como configurada o pendiente");
     afirmar(!(await pagina.content()).includes("clave-falsa"), "/configurar no muestra ningún valor");
+
+    console.log("Memoria y entrevista inicial");
+    await editar("profiles", null, { onboarding_done: false });
+    await guion([
+      { texto: "Hola, soy tu Agente. Para empezar: ¿cuáles son las áreas de tu vida que querés ordenar?" },
+      { llamadas: [
+        { nombre: "crear_area", argumentos: { nombre: "Salud" } },
+        { nombre: "crear_proyecto", argumentos: { nombre: "Correr 10 km", objetivo: "Correr 10 km sin parar antes de marzo" } },
+        { nombre: "guardar_memoria", argumentos: { categoria: "rutina", contenido: "Rinde mejor a la mañana temprano." } },
+      ] },
+      { texto: "Te armé el área Salud y el proyecto de correr. ¿Qué suele frenarte?" },
+    ]);
+    await pagina.goto(BASE + "/bienvenida");
+    await pagina.getByRole("heading", { name: "La entrevista inicial" }).waitFor();
+    await captura("14-bienvenida");
+    await pagina.getByRole("link", { name: "Hacerla por escrito" }).click();
+    await pagina.getByText("¿cuáles son las áreas de tu vida").waitFor();
+    ok("en la entrevista inicial el Agente abre la conversación");
+    afirmar(sistemaDe((await pedidosAlModelo()).at(-1)).includes("ENTREVISTA INICIAL"), "el modelo recibe el guion de la entrevista");
+    await pagina.getByLabel("Mensaje para el Agente").fill("Salud: quiero correr 10 km. Rindo mejor a la mañana.");
+    await pagina.getByLabel("Mensaje para el Agente").press("Enter");
+    await pagina.getByText("¿Qué suele frenarte?").waitFor();
+    await pagina.getByText("Nuevo proyecto: «Correr 10 km»").waitFor();
+    e = await estado();
+    afirmar(e.areas.some((a) => a.name === "Salud") && e.projects.some((p) => p.name === "Correr 10 km") && e.memories.some((m) => m.content.includes("mañana temprano")),
+      "la entrevista deja áreas, proyectos y memorias cargadas");
+    await guion([{ siSistema: "archiva una sesión", texto: JSON.stringify({
+      resumen: "Armamos el área Salud y el proyecto de correr 10 km.",
+      compromisos: [{ texto: "Salir a correr el sábado", fecha: null }],
+      memorias: [{ categoria: "objetivo", contenido: "Quiere correr 10 km sin parar.", memoria_id: null }],
+      bitacora: [],
+    }) }]);
+    await pagina.getByRole("button", { name: "Terminar" }).click();
+    await pagina.waitForURL(/\/sesiones\/[0-9a-f-]{36}$/);
+    await pagina.getByText("Armamos el área Salud").waitFor();
+    e = await estado();
+    afirmar(e.profiles[0].onboarding_done === true && e.sessions.some((x) => x.kind === "onboarding" && x.status === "completada"),
+      "al terminar la entrevista el perfil queda marcado como hecho");
+
+    await pagina.goto(BASE + "/memoria");
+    await pagina.getByText("Rinde mejor a la mañana temprano.").waitFor();
+    await pagina.getByText("Quiere correr 10 km sin parar.").waitFor();
+    await pagina.getByRole("link", { name: "ver la sesión de donde salió" }).first().waitFor();
+    await captura("15-memoria");
+    await pagina.getByRole("button", { name: "Editar: Rinde mejor a la mañana temprano." }).click();
+    await pagina.getByLabel("Texto de la memoria").fill("Rinde mejor de 7 a 10 de la mañana.");
+    await pagina.getByRole("button", { name: "Guardar" }).click();
+    await pagina.getByText("La escribiste o corregiste vos").waitFor();
+    e = await estado();
+    afirmar(e.memories.find((m) => m.content === "Rinde mejor de 7 a 10 de la mañana.")?.edited_by_user === true, "editar una memoria la marca como tuya (el Agente no la pisa)");
+    const antesDeBorrar = e.memories.length;
+    await pagina.getByRole("button", { name: /^Borrar: Se le traban/ }).click();
+    await pagina.waitForTimeout(300);
+    afirmar((await estado()).memories.length === antesDeBorrar - 1, "borrar una memoria");
+
+    await guion([{ texto: "La vez pasada quedaste en salir a correr el sábado. ¿Saliste?" }]);
+    await pagina.goto(BASE + "/chat");
+    await pagina.getByLabel("Mensaje para el Agente").fill("Hola");
+    await pagina.getByLabel("Mensaje para el Agente").press("Enter");
+    await pagina.getByText("¿Saliste?").waitFor();
+    const sistemaNuevo = sistemaDe((await pedidosAlModelo()).at(-1));
+    afirmar(sistemaNuevo.includes("Rinde mejor de 7 a 10 de la mañana.") && sistemaNuevo.includes("Compromisos: Salir a correr el sábado"),
+      "en la sesión siguiente el modelo recibe las memorias (ya corregidas) y los compromisos anteriores");
 
     console.log("Celular (390 px)");
     const movil = await navegador.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });

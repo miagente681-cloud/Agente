@@ -139,7 +139,7 @@ function crearServidor() {
         }
         if (url.pathname === "/__editar") {
           const { tabla, id, cambios } = JSON.parse(crudo);
-          Object.assign(tablas[tabla].find((f) => f.id === id), cambios);
+          Object.assign(tabla === "profiles" ? tablas.profiles[0] : tablas[tabla].find((f) => f.id === id), cambios);
           return enviar(200, {});
         }
         if (url.pathname === "/rest/v1/rpc/sumar_uso_voz") {
