@@ -12,7 +12,10 @@ const { chromium } = require("playwright");
 
 const CPS = 30;
 const SALIDA = path.join(__dirname, "salida");
-const LOCUCION = path.join(__dirname, "locucion");
+// node promo/render.cjs [nombre]: sin nombre arma video.html; con «guzman», video-guzman.html.
+const NOMBRE = process.argv[2] ?? "";
+const sufijo = NOMBRE ? `-${NOMBRE}` : "";
+const LOCUCION = path.join(__dirname, `locucion${sufijo}`);
 /** La frase empieza un instante después que la escena y deja aire al final. */
 const ANTES = 0.45;
 const DESPUES = 0.7;
@@ -31,7 +34,7 @@ async function main() {
   fs.mkdirSync(SALIDA, { recursive: true });
   const navegador = await chromium.launch();
   const pagina = await navegador.newPage({ viewport: { width: 1080, height: 1920 }, deviceScaleFactor: 1 });
-  await pagina.goto("file://" + path.join(__dirname, "video.html"));
+  await pagina.goto("file://" + path.join(__dirname, `video${sufijo}.html`));
   await pagina.evaluate(() => document.fonts.ready);
   await pagina.waitForLoadState("networkidle");
   const voces = audios();
@@ -43,7 +46,7 @@ async function main() {
   const inicios = await pagina.evaluate((t) => window.configurar(t), tiempos);
   const duracion = tiempos.reduce((a, b) => a + b, 0);
   const cuadros = Math.round(duracion * CPS);
-  const destino = path.join(SALIDA, conVoz ? "miagente-promo-con-voz.mp4" : "miagente-promo.mp4");
+  const destino = path.join(SALIDA, `miagente-${NOMBRE || "promo"}${conVoz ? "-con-voz" : ""}.mp4`);
 
   const entradasAudio = conVoz
     ? voces.flatMap((v) => ["-i", v.archivo])

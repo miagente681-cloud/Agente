@@ -111,6 +111,8 @@ node promo/render.cjs
 
 Con los audios en `promo/locucion/`, el resultado es `promo/salida/miagente-promo-con-voz.mp4`. Las frases están en `promo/locucion.cjs`.
 
+Los tres guiones aceptan un nombre para armar otra versión con sus propios datos, textos y frases. Hoy existe `guzman` (un video en joda): `node promo/capturar.cjs guzman`, `node promo/locucion.cjs guzman` y `node promo/render.cjs guzman`.
+
 ## Uso rápido del panel
 
 - **Alta en una línea**: escribí la tarea y Enter. Si terminás con `hoy`, `mañana`, un día (`vie`), una fecha (`14/11`) o una prioridad (`p1` a `p4`), se leen solas: `Pintar el cuarto vie p1`.

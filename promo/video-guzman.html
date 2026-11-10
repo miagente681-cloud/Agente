@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>MiAgente — mensaje para Guzmán</title>
+<style>
+  @font-face { font-family: Geist; src: url("../node_modules/geist/dist/fonts/geist-sans/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1080px; height: 1920px; overflow: hidden; background: #0c0c0e; }
+  body { font-family: Geist, system-ui, sans-serif; color: #ededf0; -webkit-font-smoothing: antialiased; }
+  #lienzo { position: relative; width: 1080px; height: 1920px; overflow: hidden; }
+  #brillo { position: absolute; inset: 0; background: radial-gradient(900px 700px at 50% 12%, #f5a52426, transparent 70%); }
+  .escena { position: absolute; inset: 0; opacity: 0; }
+  .rotulo { position: absolute; top: 132px; left: 84px; font-size: 30px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: #f5a524; }
+  .titulo { position: absolute; top: 196px; left: 84px; right: 84px; font-size: 82px; line-height: 1.06; font-weight: 600; letter-spacing: -.03em; }
+  .titulo b { color: #f5a524; font-weight: 600; }
+  .telefono { position: absolute; left: 50%; top: 560px; width: 620px; height: 1342px; margin-left: -310px; border-radius: 76px; border: 12px solid #26262c; background: #0c0c0e; overflow: hidden; box-shadow: 0 60px 140px #000c, 0 0 0 2px #3a3a43; }
+  .telefono img { display: block; width: 100%; }
+  .centro { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 44px; text-align: center; padding: 0 90px; }
+  .centro img { width: 220px; height: 220px; border-radius: 52px; }
+  .marca { font-size: 124px; font-weight: 650; letter-spacing: -.04em; }
+  .frase { font-size: 58px; line-height: 1.18; font-weight: 500; letter-spacing: -.02em; color: #a5a5b0; }
+  .frase b { color: #ededf0; font-weight: 600; }
+  .pastilla { margin-top: 20px; font-size: 38px; font-weight: 600; color: #1a1204; background: #f5a524; padding: 26px 54px; border-radius: 999px; }
+  /* Sello de goma: aparece de golpe, torcido, arriba del teléfono. */
+  .sello { position: absolute; left: 50%; width: 760px; margin-left: -380px; text-align: center; font-size: 84px; line-height: 1; font-weight: 800; letter-spacing: .02em; color: #ff6b6b; border: 10px solid #ff6b6b; border-radius: 24px; padding: 30px 20px; background: #0c0c0ee6; opacity: 0; text-transform: uppercase; }
+  #barra { position: absolute; left: 0; bottom: 0; height: 8px; background: #f5a524; width: 0; }
+</style>
+</head>
+<body>
+<div id="lienzo">
+  <div id="brillo"></div>
+
+  <section class="escena" data-d="4">
+    <div class="centro">
+      <p class="frase" style="color:#f5a524;font-size:40px;letter-spacing:.14em;text-transform:uppercase">Aviso de utilidad pública</p>
+      <p class="marca" style="font-size:150px">Guzmán:</p>
+      <p class="frase">tenemos que hablar de <b>tus tareas.</b></p>
+    </div>
+  </section>
+
+  <section class="escena" data-d="6">
+    <p class="rotulo">Prueba n.º 1</p>
+    <h1 class="titulo">«Empezar el lunes.» <b>Venció en septiembre.</b></h1>
+    <div class="telefono"><img src="capturas-guzman/hoy.png" alt=""></div>
+    <p class="sello" data-en="1.8" style="top:1010px">VENCIDÍSIMO</p>
+  </section>
+
+  <section class="escena" data-d="6">
+    <p class="rotulo">Prueba n.º 2</p>
+    <h1 class="titulo">Tareas hechas: <b>cero.</b></h1>
+    <div class="telefono"><img src="capturas-guzman/tablero-fin.png" alt=""></div>
+    <p class="sello" data-en="2.2" style="top:1180px">NO ES UN BUG.<br>SOS VOS.</p>
+  </section>
+
+  <section class="escena" data-d="6">
+    <p class="rotulo">Prueba n.º 3</p>
+    <h1 class="titulo">«Mañana arranco, posta.» <b>Ajá.</b></h1>
+    <div class="telefono"><img src="capturas-guzman/chat.png" alt=""></div>
+  </section>
+
+  <section class="escena" data-d="6">
+    <p class="rotulo">El Agente ya te sacó la ficha</p>
+    <h1 class="titulo">Postergás <b>hasta lo que te gusta.</b></h1>
+    <div class="telefono"><img src="capturas-guzman/memoria.png" alt=""></div>
+    <p class="sello" data-en="2.4" style="top:1500px">DEJÁ DE SER<br>TAN GIL</p>
+  </section>
+
+  <section class="escena" data-d="6">
+    <p class="rotulo">Última oportunidad</p>
+    <h1 class="titulo">Atendé, Guzmán. <b>Encará.</b></h1>
+    <div class="telefono"><img src="capturas-guzman/llamada.png" alt=""></div>
+  </section>
+
+  <section class="escena" data-d="5">
+    <div class="centro">
+      <img src="../public/iconos/icono-512.png" alt="">
+      <p class="marca">MiAgente</p>
+      <p class="frase">Menos gil.<br><b>Más keke.</b></p>
+      <p class="pastilla">Dale, Guzmán</p>
+    </div>
+  </section>
+
+  <div id="barra"></div>
+</div>
+<script>
+  // Todo el video es una función del tiempo: render(t) deja el cuadro del segundo t.
+  // Así se puede capturar cuadro por cuadro, sin depender del reloj.
+  const escenas = [...document.querySelectorAll(".escena")];
+  let duraciones, inicios;
+  // Con locución, cada escena dura lo que dura su frase: los tiempos se pueden cambiar desde afuera.
+  window.configurar = (nuevas) => {
+    duraciones = nuevas;
+    inicios = duraciones.map((_, i) => duraciones.slice(0, i).reduce((a, b) => a + b, 0));
+    window.DURACION = duraciones.reduce((a, b) => a + b, 0);
+    return inicios;
+  };
+  window.configurar(escenas.map((e) => Number(e.dataset.d)));
+  const suave = (x) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
+  const ENTRA = 0.55, SALE = 0.4;
+
+  window.render = (t) => {
+    escenas.forEach((escena, i) => {
+      const local = t - inicios[i];
+      const d = duraciones[i];
+      const visible = local >= 0 && local < d;
+      const ultima = i === escenas.length - 1;
+      const entra = suave(local / ENTRA);
+      const sale = ultima ? 1 : 1 - suave((local - (d - SALE)) / SALE);
+      escena.style.opacity = visible ? Math.min(entra, sale) : 0;
+      if (!visible) return;
+
+      const titulo = escena.querySelector(".titulo");
+      const rotulo = escena.querySelector(".rotulo");
+      const telefono = escena.querySelector(".telefono");
+      const centro = escena.querySelector(".centro");
+      if (rotulo) rotulo.style.transform = `translateY(${(1 - entra) * 30}px)`;
+      if (titulo) {
+        const e2 = suave((local - 0.12) / ENTRA);
+        titulo.style.transform = `translateY(${(1 - e2) * 44}px)`;
+        titulo.style.opacity = e2;
+      }
+      if (telefono) {
+        const e3 = suave((local - 0.25) / 0.8);
+        // Entra desde abajo y después se acerca apenas, para que no quede quieto.
+        const acerca = 1 + 0.03 * (local / d);
+        telefono.style.transform = `translateY(${(1 - e3) * 220}px) scale(${(0.94 + 0.06 * e3) * acerca})`;
+        telefono.style.opacity = e3;
+      }
+      // Los sellos caen con un golpe: grandes al principio, se asientan enseguida.
+      escena.querySelectorAll(".sello").forEach((sello) => {
+        const p = (local - Number(sello.dataset.en)) / 0.28;
+        const e4 = suave(p);
+        sello.style.opacity = p > 0 ? 1 : 0;
+        sello.style.transform = `rotate(-8deg) scale(${2.4 - 1.4 * e4})`;
+      });
+      if (centro) {
+        centro.style.transform = `scale(${0.94 + 0.06 * entra + 0.02 * (local / d)})`;
+        [...centro.children].forEach((hijo, k) => {
+          const ek = suave((local - 0.15 * k) / 0.6);
+          hijo.style.opacity = ek;
+          hijo.style.transform = `translateY(${(1 - ek) * 36}px)`;
+        });
+      }
+    });
+    document.getElementById("barra").style.width = `${(t / window.DURACION) * 100}%`;
+  };
+  window.render(Number(new URLSearchParams(location.search).get("t") ?? 0));
+</script>
+</body>
+</html>
