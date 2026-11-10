@@ -22,7 +22,7 @@ import type { Area, Proyecto, Tarea } from "./tipos";
 
 const ZONA_POR_DEFECTO = "America/Montevideo";
 const CLAVE_FILTRO = "miagente:filtro";
-const COLUMNAS_AREA = "id,name,color,sort_order";
+const COLUMNAS_AREA = "id,name,color,icon,sort_order";
 const COLUMNAS_PROYECTO =
   "id,area_id,name,goal,description,status,priority,due_date,sort_order,created_at";
 export const COLUMNAS_TAREA =
@@ -59,7 +59,7 @@ type Datos = {
   avisar: (texto: string, accion?: Aviso["accion"]) => void;
 
   crearArea: (nombre: string, color: string) => Promise<void>;
-  editarArea: (id: string, cambios: Partial<Pick<Area, "name" | "color">>) => Promise<void>;
+  editarArea: (id: string, cambios: Partial<Pick<Area, "name" | "color" | "icon">>) => Promise<void>;
   archivarArea: (id: string) => Promise<void>;
 
   crearProyecto: (datos: NuevoProyecto) => Promise<Proyecto>;
@@ -195,7 +195,9 @@ export function ProveedorDatos({ children }: { children: ReactNode }) {
 
   const crearArea = useCallback(
     async (nombre: string, color: string) => {
-      const area: Area = { id: crypto.randomUUID(), name: nombre, color, sort_order: Date.now() / 1000 };
+      const area: Area = {
+        id: crypto.randomUUID(), name: nombre, color, icon: null, sort_order: Date.now() / 1000,
+      };
       setAreas((l) => [...l, area]);
       await confirmar(supabaseBrowser().from("areas").insert(area));
     },
@@ -203,7 +205,7 @@ export function ProveedorDatos({ children }: { children: ReactNode }) {
   );
 
   const editarArea = useCallback(
-    async (id: string, cambios: Partial<Pick<Area, "name" | "color">>) => {
+    async (id: string, cambios: Partial<Pick<Area, "name" | "color" | "icon">>) => {
       setAreas((l) => l.map((a) => (a.id === id ? { ...a, ...cambios } : a)));
       await confirmar(supabaseBrowser().from("areas").update(cambios).eq("id", id));
     },

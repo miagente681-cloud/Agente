@@ -8,6 +8,7 @@ export type Area = {
   id: string;
   name: string;
   color: string;
+  icon: string | null;
   sort_order: number;
 };
 

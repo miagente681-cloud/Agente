@@ -10,7 +10,8 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import Link from "next/link";
+import { ChevronLeft, ChevronRight, Flag } from "lucide-react";
 import { useState } from "react";
 import { EstadoDatos, Filtro } from "@/components/filtro";
 import { AltaRapida } from "@/components/tareas/alta-rapida";
@@ -19,7 +20,7 @@ import { Boton } from "@/components/ui/boton";
 import { EncabezadoPagina } from "@/components/ui/varios";
 import { porPrioridad, useDatos, useTareasVisibles } from "@/lib/datos/almacen";
 import { fechaLarga, grillaMes, MESES } from "@/lib/datos/fechas";
-import type { Tarea } from "@/lib/datos/tipos";
+import type { Proyecto, Tarea } from "@/lib/datos/tipos";
 
 const DIAS = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"];
 const MAXIMO_POR_DIA = 3;
@@ -56,6 +57,7 @@ function Ficha({ tarea, hoy }: { tarea: Tarea; hoy: string }) {
 function Dia({
   fecha,
   tareas,
+  proyectos,
   hoy,
   delMes,
   elegido,
@@ -63,6 +65,7 @@ function Dia({
 }: {
   fecha: string;
   tareas: Tarea[];
+  proyectos: Proyecto[];
   hoy: string;
   delMes: boolean;
   elegido: boolean;
@@ -82,7 +85,7 @@ function Dia({
         type="button"
         onClick={alElegir}
         aria-pressed={elegido}
-        aria-label={`${fechaLarga(fecha)}${tareas.length ? `, ${tareas.length} ${tareas.length === 1 ? "tarea" : "tareas"}` : ""}`}
+        aria-label={`${fechaLarga(fecha)}${tareas.length ? `, ${tareas.length} ${tareas.length === 1 ? "tarea" : "tareas"}` : ""}${proyectos.length ? `, vence ${proyectos.map((p) => p.name).join(", ")}` : ""}`}
         className="absolute inset-0 rounded-none"
       />
       <div className="pointer-events-none relative flex flex-col gap-0.5 p-1 md:p-1.5">
@@ -94,8 +97,9 @@ function Dia({
           {Number(fecha.slice(8))}
         </span>
         {/* Celular: puntos. Escritorio: títulos que se pueden arrastrar a otro día. */}
-        {tareas.length ? (
+        {tareas.length || proyectos.length ? (
           <span className="flex justify-center gap-0.5 md:hidden" aria-hidden>
+            {proyectos.length ? <span className="h-1 w-2 rounded-full bg-info" /> : null}
             {tareas.slice(0, 4).map((t) => (
               <span
                 key={t.id}
@@ -107,6 +111,17 @@ function Dia({
           </span>
         ) : null}
         <div className="pointer-events-auto hidden flex-col gap-0.5 md:flex">
+          {proyectos.map((p) => (
+            <Link
+              key={p.id}
+              href={`/proyectos/${p.id}`}
+              title={`Fecha límite del proyecto ${p.name}`}
+              className="flex items-center gap-1 truncate rounded border border-info/40 px-1.5 py-px text-[11px] leading-4 text-info"
+            >
+              <Flag size={10} aria-hidden className="shrink-0" />
+              <span className="truncate">{p.name}</span>
+            </Link>
+          ))}
           {tareas.slice(0, MAXIMO_POR_DIA).map((t) => (
             <Ficha key={t.id} tarea={t} hoy={hoy} />
           ))}
@@ -122,7 +137,7 @@ function Dia({
 }
 
 export function Calendario() {
-  const { estado, hoy, editarTarea } = useDatos();
+  const { estado, hoy, editarTarea, proyectos, filtro } = useDatos();
   const visibles = useTareasVisibles();
   // null = el mes y el día de hoy (así sigue al reloj sin guardar estado de más).
   const [mesVisto, setMesVisto] = useState<{ anio: number; mes: number } | null>(null);
@@ -143,6 +158,14 @@ export function Calendario() {
   }
   for (const lista of porDia.values()) {
     lista.sort((a, b) => Number(a.status === "hecha") - Number(b.status === "hecha") || porPrioridad(a, b));
+  }
+
+  // Fechas límite de los proyectos activos (respetando el filtro de proyecto).
+  const proyectosPorDia = new Map<string, Proyecto[]>();
+  for (const p of proyectos) {
+    if (p.status !== "activo" || !p.due_date) continue;
+    if (filtro.proyectoId && filtro.proyectoId !== p.id) continue;
+    proyectosPorDia.set(p.due_date, [...(proyectosPorDia.get(p.due_date) ?? []), p]);
   }
 
   const mover = (delta: number) => {
@@ -212,6 +235,7 @@ export function Calendario() {
                     key={fecha}
                     fecha={fecha}
                     tareas={porDia.get(fecha) ?? []}
+                    proyectos={proyectosPorDia.get(fecha) ?? []}
                     hoy={hoy}
                     delMes={fecha.startsWith(prefijo)}
                     elegido={fecha === dia}
@@ -234,11 +258,21 @@ export function Calendario() {
               {dia === hoy ? "Hoy · " : ""}
               {fechaLarga(dia)}
             </h2>
+            {(proyectosPorDia.get(dia) ?? []).map((p) => (
+              <Link
+                key={p.id}
+                href={`/proyectos/${p.id}`}
+                className="flex items-center gap-2 rounded-lg border border-info/40 px-3.5 py-2.5 text-sm text-info"
+              >
+                <Flag size={14} aria-hidden />
+                Fecha límite del proyecto <span className="font-medium">{p.name}</span>
+              </Link>
+            ))}
             {delDia.length ? (
               <ListaTareas tareas={delDia} />
-            ) : (
+            ) : !(proyectosPorDia.get(dia) ?? []).length ? (
               <p className="text-sm text-texto-3">Nada vence este día.</p>
-            )}
+            ) : null}
             <AltaRapida fechaFija={dia} marcador="Agregar una tarea para este día…" />
           </section>
         </div>

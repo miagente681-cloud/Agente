@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ListTree, OctagonAlert } from "lucide-react";
+import { Check, ListTree, OctagonAlert, Sparkles } from "lucide-react";
 import { useDatos } from "@/lib/datos/almacen";
 import { etiquetaFecha } from "@/lib/datos/fechas";
 import type { Tarea } from "@/lib/datos/tipos";
@@ -50,10 +50,18 @@ export function FechaLimite({ tarea, hoy }: { tarea: Tarea; hoy: string }) {
   const esHoy = tarea.due_date === hoy;
   return (
     <span
-      className={`whitespace-nowrap text-xs ${
+      className={`inline-flex items-center gap-1 whitespace-nowrap text-xs ${
         vencida ? "font-medium text-peligro" : esHoy ? "text-texto" : "text-texto-3"
       }`}
+      title={tarea.due_set_by === "agente" ? "Fecha sugerida por el Agente" : "Fecha puesta por vos"}
     >
+      {/* La chispa marca las fechas que propuso el Agente; las tuyas van sin marca. */}
+      {tarea.due_set_by === "agente" ? (
+        <>
+          <Sparkles size={11} aria-hidden className="text-acento" />
+          <span className="sr-only">Sugerida por el Agente: </span>
+        </>
+      ) : null}
       {vencida ? "Venció " : ""}
       {vencida ? etiquetaFecha(tarea.due_date, hoy).toLowerCase() : etiquetaFecha(tarea.due_date, hoy)}
     </span>

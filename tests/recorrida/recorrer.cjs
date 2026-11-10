@@ -11,9 +11,11 @@ const { spawn } = require("node:child_process");
 const path = require("node:path");
 const { chromium } = require("playwright");
 const { crearServidor, cookieDeSesion } = require("./supabase-falso.cjs");
+const { crearModelos } = require("./modelos-falsos.cjs");
 
 const BASE = "http://localhost:3100";
 const FALSO = "http://127.0.0.1:54321";
+const MODELOS = "http://127.0.0.1:54322";
 const capturas = process.argv[2] ?? path.join(__dirname, "capturas");
 const hechos = [];
 const ok = (texto) => (hechos.push(texto), console.log("  ✓", texto));
@@ -23,8 +25,14 @@ const afirmar = (condicion, texto) => {
 };
 const estado = async () => (await fetch(`${FALSO}/__estado`)).json();
 const sembrar = (tabla, fila) => fetch(`${FALSO}/__sembrar`, { method: "POST", body: JSON.stringify({ tabla, fila }) });
+const guion = (pasos) => fetch(`${MODELOS}/__guion`, { method: "POST", body: JSON.stringify(pasos) });
+const pedidosAlModelo = async () => (await fetch(`${MODELOS}/__pedidos`)).json();
+const corto = (id) => id.slice(0, 8);
 const fechaMvd = (dias = 0) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "America/Montevideo" }).format(Date.now() + dias * 86_400_000);
+
+/** Variables que agregan las fases siguientes. */
+const ENTORNO_EXTRA = {};
 
 async function esperarServidor() {
   for (let i = 0; i < 60; i++) {
@@ -40,8 +48,19 @@ async function esperarServidor() {
 
 async function main() {
   const falso = crearServidor().listen(54321, "127.0.0.1");
+  const modelos = crearModelos().listen(54322, "127.0.0.1");
   const next = spawn(process.execPath, [require.resolve("next/dist/bin/next"), "start", "-p", "3100"], {
-    env: { ...process.env, NEXT_PUBLIC_SUPABASE_URL: FALSO, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "clave-falsa" },
+    env: {
+      ...process.env,
+      NEXT_PUBLIC_SUPABASE_URL: FALSO,
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "clave-falsa",
+      // Proveedores de mentira: mismas variables que en producción, apuntando a otro lado.
+      GEMINI_API_KEY: "falsa",
+      GEMINI_BASE_URL: MODELOS,
+      GROQ_API_KEY: "falsa",
+      GROQ_BASE_URL: `${MODELOS}/groq`,
+      ...ENTORNO_EXTRA,
+    },
     stdio: "ignore",
   });
   const navegador = await chromium.launch();
@@ -264,6 +283,77 @@ async function main() {
     await pagina.waitForTimeout(300);
     afirmar(!(await estado()).tasks.some((t) => t.title === "Salir a trotar"), "borrar para siempre pide confirmación y borra");
 
+    console.log("Agente por chat");
+    e = await estado();
+    const griferia = e.tasks.find((t) => t.title === "Comprar grifería");
+    const electricista = e.tasks.find((t) => t.title === "Llamar al electricista");
+    await guion([
+      { proveedor: "gemini", llamadas: [
+        { nombre: "actualizar_tarea", argumentos: { tarea_id: corto(griferia.id), estado: "hecha" } },
+        { nombre: "actualizar_tarea", argumentos: { tarea_id: corto(electricista.id), estado: "bloqueada", motivo_bloqueo: "Espera una respuesta" } },
+      ] },
+      { proveedor: "gemini", texto: "Listo: grifería hecha y lo del electricista queda trabado hasta que te contesten. ¿Cuándo le volvés a escribir?" },
+    ]);
+    await pagina.goto(BASE + "/chat");
+    const mensaje = pagina.getByLabel("Mensaje para el Agente");
+    await mensaje.fill("Terminé de comprar la grifería y lo del electricista está trabado porque espero una respuesta");
+    await mensaje.press("Enter");
+    await pagina.getByText("¿Cuándo le volvés a escribir?").waitFor();
+    await pagina.getByText("«Comprar grifería»: hecha").waitFor();
+    await pagina.getByText("«Llamar al electricista»: bloqueada, trabada por: Espera una respuesta").waitFor();
+    e = await estado();
+    afirmar(e.tasks.find((t) => t.id === griferia.id).status === "hecha" && e.tasks.find((t) => t.id === electricista.id).blocked_reason === "Espera una respuesta",
+      "«terminé X y Z está trabado»: el Agente actualiza las dos tareas");
+    afirmar(e.change_log.length === 2 && e.change_log[0].old_values.status === "pendiente", "cada cambio queda registrado con el valor anterior");
+    const enviado = (await pedidosAlModelo())[0];
+    afirmar(enviado.cuerpo.systemInstruction.parts[0].text.includes(`[${corto(griferia.id)}] Comprar grifería`) && !JSON.stringify(enviado.cuerpo).includes(griferia.id),
+      "el modelo recibe el resumen del panel con ids cortos");
+    await captura("12-chat");
+    await pagina.getByRole("button", { name: "Deshacer" }).first().click();
+    await pagina.getByText("Deshecho").waitFor();
+    afirmar((await estado()).tasks.find((t) => t.id === griferia.id).status === "pendiente", "Deshacer devuelve la tarea a como estaba");
+
+    await guion([{ proveedor: "gemini", estado: 429 }, { proveedor: "groq", texto: "Sigo yo. ¿Qué más quedó pendiente?" }]);
+    await mensaje.fill("¿Y ahora qué hago?");
+    await mensaje.press("Enter");
+    await pagina.getByText("Sigo yo. ¿Qué más quedó pendiente?").waitFor();
+    await pagina.getByText("Gemini llegó a su límite; sigue el siguiente.").waitFor();
+    ok("si Gemini devuelve 429, responde Groq sin cortar la conversación");
+    await pagina.goto(BASE + "/tablero");
+    await pagina.getByRole("region", { name: "Bloqueada" }).getByText("Llamar al electricista").waitFor();
+    ok("los cambios del Agente se ven en el Tablero");
+
+    await guion([{ siSistema: "archiva una sesión", texto: JSON.stringify({
+      resumen: "Dejaste trabado lo del electricista y quedaste en volver a escribirle el jueves.",
+      compromisos: [{ texto: "Escribirle al electricista", fecha: fechaMvd(2) }],
+      memorias: [{ categoria: "obstaculo_recurrente", contenido: "Se le traban las tareas que dependen de la respuesta de otra persona.", memoria_id: null }],
+      bitacora: [{ proyecto_id: corto(proyectoId), texto: "El electricista todavía no contestó." }],
+    }) }]);
+    await pagina.goto(BASE + "/chat");
+    await pagina.getByText("Sigo yo. ¿Qué más quedó pendiente?").waitFor();
+    ok("al volver al chat sigue la misma conversación");
+    await pagina.getByRole("button", { name: "Terminar" }).click();
+    await pagina.waitForURL(/\/sesiones\/[0-9a-f-]{36}$/);
+    await pagina.getByText("Dejaste trabado lo del electricista").waitFor();
+    await pagina.getByText("Escribirle al electricista").waitFor();
+    await pagina.getByText("Deshecho").waitFor();
+    await captura("13-resumen-sesion");
+    e = await estado();
+    afirmar(e.sessions[0].status === "completada" && e.sessions[0].providers_used.join() === "gemini,groq", "la sesión se cierra y guarda qué proveedores respondieron");
+    afirmar(e.memories.length === 1 && e.project_log.some((x) => x.kind === "resumen_llamada"), "al cerrar quedan la memoria nueva y el resumen en la bitácora del proyecto");
+
+    await pagina.goto(BASE + "/configuracion");
+    await pagina.getByText("Cerebro del Agente").waitFor();
+    await pagina.getByRole("button", { name: "Subir Groq" }).click();
+    await pagina.waitForTimeout(300);
+    afirmar((await estado()).profiles[0].agent_config.orden_proveedores[0] === "groq", "el orden de proveedores se guarda en el perfil");
+    await pagina.getByRole("button", { name: "Bajar Groq" }).click();
+    await pagina.goto(BASE + "/configurar");
+    await pagina.getByText("Gemini (cerebro principal del Agente)").waitFor();
+    afirmar((await pagina.getByText("Pendiente", { exact: true }).count()) > 0 && (await pagina.getByText("Configurada", { exact: true }).count()) >= 3,
+      "/configurar lista cada integración como configurada o pendiente");
+    afirmar(!(await pagina.content()).includes("clave-falsa"), "/configurar no muestra ningún valor");
+
     console.log("Celular (390 px)");
     const movil = await navegador.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
     await movil.addCookies([{ ...cookieDeSesion(), url: BASE }]);
@@ -289,6 +379,7 @@ async function main() {
     await navegador.close();
     next.kill();
     falso.close();
+    modelos.close();
   }
 }
 

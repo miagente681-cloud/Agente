@@ -95,7 +95,7 @@ export function Cuenta() {
   }
 
   return (
-    <div className="flex max-w-xl flex-col gap-5">
+    <div className="flex flex-col gap-5">
       <Tarjeta>
         <h2 className="rotulo mb-4">Perfil</h2>
         <form onSubmit={guardar} className="flex flex-col gap-4">

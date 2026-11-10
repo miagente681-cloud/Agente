@@ -2,7 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { SUPABASE_PUBLIC_KEY, SUPABASE_URL, supabaseConfigurado } from "@/lib/env";
 
-const RUTAS_PUBLICAS = ["/ingresar", "/auth", "/configurar"];
+// /configurar solo es pública mientras falte Supabase (ese caso se resuelve antes).
+const RUTAS_PUBLICAS = ["/ingresar", "/auth"];
 
 /**
  * Refresca la sesión de Supabase en cada pedido y manda a /ingresar a quien no

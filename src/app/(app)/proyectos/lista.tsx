@@ -204,6 +204,20 @@ function GestionAreas() {
                     ))}
                   </select>
                 </label>
+                <label htmlFor={`area-icono-${a.id}`} className="sr-only">
+                  Ícono de {a.name} (un emoji)
+                </label>
+                <Entrada
+                  id={`area-icono-${a.id}`}
+                  defaultValue={a.icon ?? ""}
+                  placeholder="🙂"
+                  maxLength={4}
+                  onBlur={(e) => {
+                    const icono = e.target.value.trim() || null;
+                    if (icono !== a.icon) void editarArea(a.id, { icon: icono });
+                  }}
+                  className="!h-9 !w-12 shrink-0 !px-0 text-center"
+                />
                 <label htmlFor={`area-${a.id}`} className="sr-only">
                   Nombre del área
                 </label>
@@ -264,7 +278,11 @@ export function ListaProyectos() {
     .sort((a, b) => a.priority - b.priority || a.sort_order - b.sort_order);
   const ocultos = proyectos.length - proyectos.filter((p) => p.status === "activo").length;
   const grupos = [
-    ...areas.map((a) => ({ id: a.id, nombre: a.name, color: a.color as string | null })),
+    ...areas.map((a) => ({
+      id: a.id,
+      nombre: a.icon ? `${a.icon} ${a.name}` : a.name,
+      color: a.color as string | null,
+    })),
     { id: null as string | null, nombre: "Sin área", color: null as string | null },
   ]
     .map((g) => ({

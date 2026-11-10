@@ -120,6 +120,27 @@ describe("esquema", () => {
     });
   });
 
+  it("el uso de voz se suma de forma atómica y solo desde el servidor", async () => {
+    await db.exec("set role service_role;");
+    try {
+      await db.query("select * from public.sumar_uso_voz($1, 30, 100)", [ANA]);
+      const { rows } = await db.query<{ stt_seconds: number; tts_chars: number }>(
+        "select * from public.sumar_uso_voz($1, 15, 50)",
+        [ANA],
+      );
+      expect(rows[0]).toEqual({ stt_seconds: 45, tts_chars: 150 });
+    } finally {
+      await db.exec("reset role;");
+    }
+    await como(ANA, async () => {
+      await expect(db.query("select * from public.sumar_uso_voz($1, 1, 1)", [ANA])).rejects.toThrow(
+        /permission denied/,
+      );
+      const { rows } = await db.query<{ stt_seconds: number }>("select stt_seconds from public.voice_usage");
+      expect(rows).toEqual([{ stt_seconds: 45 }]);
+    });
+  });
+
   it("mantiene las fechas de la tarea coherentes con el estado", async () => {
     await como(ANA, async () => {
       const { rows } = await db.query<{ id: string }>("select id from public.tasks limit 1");
