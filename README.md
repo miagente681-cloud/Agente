@@ -81,6 +81,20 @@ npm run recorrida
 
 Recorre la app en Chromium (escritorio y celular) contra servidores de mentira, y una segunda vez sin ninguna clave. Necesita Playwright instalado en la máquina. Compila con variables de prueba: antes de desplegar a mano, volvé a compilar con las reales.
 
+## Video promocional
+
+`promo/` arma un video vertical (1080×1920, unos 35 segundos) con capturas reales de la app y textos en pantalla. Necesita Playwright y ffmpeg, y el mismo build que la recorrida.
+
+```bash
+node promo/capturar.cjs
+```
+
+```bash
+node promo/render.cjs
+```
+
+El resultado queda en `promo/salida/miagente-promo.mp4`. Los textos y los tiempos se cambian en `promo/video.html`.
+
 ## Uso rápido del panel
 
 - **Alta en una línea**: escribí la tarea y Enter. Si terminás con `hoy`, `mañana`, un día (`vie`), una fecha (`14/11`) o una prioridad (`p1` a `p4`), se leen solas: `Pintar el cuarto vie p1`.

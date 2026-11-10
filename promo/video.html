@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>MiAgente — video promocional</title>
+<style>
+  @font-face { font-family: Geist; src: url("../node_modules/geist/dist/fonts/geist-sans/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1080px; height: 1920px; overflow: hidden; background: #0c0c0e; }
+  body { font-family: Geist, system-ui, sans-serif; color: #ededf0; -webkit-font-smoothing: antialiased; }
+  #lienzo { position: relative; width: 1080px; height: 1920px; overflow: hidden; }
+  #brillo { position: absolute; inset: 0; background: radial-gradient(900px 700px at 50% 12%, #f5a52426, transparent 70%); }
+  .escena { position: absolute; inset: 0; opacity: 0; }
+  .rotulo { position: absolute; top: 132px; left: 84px; font-size: 30px; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: #f5a524; }
+  .titulo { position: absolute; top: 196px; left: 84px; right: 84px; font-size: 82px; line-height: 1.06; font-weight: 600; letter-spacing: -.03em; }
+  .titulo b { color: #f5a524; font-weight: 600; }
+  .telefono { position: absolute; left: 50%; top: 560px; width: 620px; height: 1342px; margin-left: -310px; border-radius: 76px; border: 12px solid #26262c; background: #0c0c0e; overflow: hidden; box-shadow: 0 60px 140px #000c, 0 0 0 2px #3a3a43; }
+  .telefono img { display: block; width: 100%; }
+  .centro { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 44px; text-align: center; padding: 0 90px; }
+  .centro img { width: 220px; height: 220px; border-radius: 52px; }
+  .marca { font-size: 124px; font-weight: 650; letter-spacing: -.04em; }
+  .frase { font-size: 58px; line-height: 1.18; font-weight: 500; letter-spacing: -.02em; color: #a5a5b0; }
+  .frase b { color: #ededf0; font-weight: 600; }
+  .pastilla { margin-top: 20px; font-size: 38px; font-weight: 600; color: #1a1204; background: #f5a524; padding: 26px 54px; border-radius: 999px; }
+  #barra { position: absolute; left: 0; bottom: 0; height: 8px; background: #f5a524; width: 0; }
+</style>
+</head>
+<body>
+<div id="lienzo">
+  <div id="brillo"></div>
+
+  <section class="escena" data-d="3.6">
+    <div class="centro">
+      <img src="../public/iconos/icono-512.png" alt="">
+      <p class="marca">MiAgente</p>
+      <p class="frase">Tus proyectos, y un Agente que <b>no te deja postergarlos.</b></p>
+    </div>
+  </section>
+
+  <section class="escena" data-d="5.4">
+    <p class="rotulo">Hoy</p>
+    <h1 class="titulo">Lo que toca ahora, con <b>lo vencido arriba.</b></h1>
+    <div class="telefono"><img src="capturas/hoy.png" alt=""></div>
+  </section>
+
+  <section class="escena" data-d="5">
+    <p class="rotulo">Tablero</p>
+    <h1 class="titulo">Movés las tareas <b>con un dedo.</b></h1>
+    <div class="telefono"><img src="capturas/tablero.png" alt=""></div>
+  </section>
+
+  <section class="escena" data-d="6.4">
+    <p class="rotulo">Agente</p>
+    <h1 class="titulo">Le contás qué hiciste. <b>Él actualiza todo.</b></h1>
+    <div class="telefono"><img src="capturas/chat.png" alt=""></div>
+  </section>
+
+  <section class="escena" data-d="5.4">
+    <p class="rotulo">Llamadas</p>
+    <h1 class="titulo">Te llama <b>a la hora que elegiste.</b></h1>
+    <div class="telefono"><img src="capturas/llamada.png" alt=""></div>
+  </section>
+
+  <section class="escena" data-d="5">
+    <p class="rotulo">Memoria</p>
+    <h1 class="titulo">Aprende <b>cómo trabajás</b> y qué te frena.</h1>
+    <div class="telefono"><img src="capturas/memoria.png" alt=""></div>
+  </section>
+
+  <section class="escena" data-d="4.6">
+    <div class="centro">
+      <img src="../public/iconos/icono-512.png" alt="">
+      <p class="marca">MiAgente</p>
+      <p class="frase">Tu project manager personal.<br><b>Menos postergar, más terminar.</b></p>
+      <p class="pastilla">Se instala en tu celular</p>
+    </div>
+  </section>
+
+  <div id="barra"></div>
+</div>
+<script>
+  // Todo el video es una función del tiempo: render(t) deja el cuadro del segundo t.
+  // Así se puede capturar cuadro por cuadro, sin depender del reloj.
+  const escenas = [...document.querySelectorAll(".escena")];
+  const duraciones = escenas.map((e) => Number(e.dataset.d));
+  const inicios = duraciones.map((_, i) => duraciones.slice(0, i).reduce((a, b) => a + b, 0));
+  window.DURACION = duraciones.reduce((a, b) => a + b, 0);
+  const suave = (x) => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
+  const ENTRA = 0.55, SALE = 0.4;
+
+  window.render = (t) => {
+    escenas.forEach((escena, i) => {
+      const local = t - inicios[i];
+      const d = duraciones[i];
+      const visible = local >= 0 && local < d;
+      const ultima = i === escenas.length - 1;
+      const entra = suave(local / ENTRA);
+      const sale = ultima ? 1 : 1 - suave((local - (d - SALE)) / SALE);
+      escena.style.opacity = visible ? Math.min(entra, sale) : 0;
+      if (!visible) return;
+
+      const titulo = escena.querySelector(".titulo");
+      const rotulo = escena.querySelector(".rotulo");
+      const telefono = escena.querySelector(".telefono");
+      const centro = escena.querySelector(".centro");
+      if (rotulo) rotulo.style.transform = `translateY(${(1 - entra) * 30}px)`;
+      if (titulo) {
+        const e2 = suave((local - 0.12) / ENTRA);
+        titulo.style.transform = `translateY(${(1 - e2) * 44}px)`;
+        titulo.style.opacity = e2;
+      }
+      if (telefono) {
+        const e3 = suave((local - 0.25) / 0.8);
+        // Entra desde abajo y después se acerca apenas, para que no quede quieto.
+        const acerca = 1 + 0.03 * (local / d);
+        telefono.style.transform = `translateY(${(1 - e3) * 220}px) scale(${(0.94 + 0.06 * e3) * acerca})`;
+        telefono.style.opacity = e3;
+      }
+      if (centro) {
+        centro.style.transform = `scale(${0.94 + 0.06 * entra + 0.02 * (local / d)})`;
+        [...centro.children].forEach((hijo, k) => {
+          const ek = suave((local - 0.15 * k) / 0.6);
+          hijo.style.opacity = ek;
+          hijo.style.transform = `translateY(${(1 - ek) * 36}px)`;
+        });
+      }
+    });
+    document.getElementById("barra").style.width = `${(t / window.DURACION) * 100}%`;
+  };
+  window.render(Number(new URLSearchParams(location.search).get("t") ?? 0));
+</script>
+</body>
+</html>

@@ -14,6 +14,7 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Guiones de recorrida en navegador: CommonJS, fuera del build.
     "tests/recorrida/**",
+    "promo/**",
   ]),
 ]);
 

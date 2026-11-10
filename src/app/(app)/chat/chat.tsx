@@ -175,10 +175,10 @@ export function Chat() {
     <div className="flex min-h-[calc(100dvh-8.5rem)] flex-col md:min-h-[calc(100dvh-5rem)]">
       <EncabezadoPagina
         titulo={TITULO[sesion?.kind ?? tipoPedido] ?? "Agente"}
-        descripcion="Contale qué hiciste o qué te frena. Actualiza el panel por vos."
+        descripcion="Contale qué hiciste o qué te frena."
         acciones={
           <div className="flex shrink-0 items-center gap-1">
-            <Link href="/sesiones" className="rounded-md px-2 py-1.5 text-[13px] text-texto-2 hover:text-texto">
+            <Link href="/sesiones" className="hidden rounded-md px-2 py-1.5 text-[13px] text-texto-2 hover:text-texto sm:block">
               Sesiones
             </Link>
             <Boton tamano="sm" variante="primario" onClick={() => void hablar()} disabled={cargando || enviando || cerrando}>
