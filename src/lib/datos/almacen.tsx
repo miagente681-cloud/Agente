@@ -50,6 +50,8 @@ export type CambiosProyecto = Partial<
 type Datos = {
   estado: "cargando" | "error" | "listo";
   hoy: string;
+  /** Zona horaria del perfil. */
+  zona: string;
   /** null mientras no se sabe. */
   entrevistaHecha: boolean | null;
   areas: Area[];
@@ -371,7 +373,7 @@ export function ProveedorDatos({ children }: { children: ReactNode }) {
   );
 
   const valor: Datos = {
-    estado, hoy, entrevistaHecha, areas, proyectos, tareas, filtro, cambiarFiltro, recargar, avisar,
+    estado, hoy, zona, entrevistaHecha, areas, proyectos, tareas, filtro, cambiarFiltro, recargar, avisar,
     crearArea, editarArea, archivarArea,
     crearProyecto, editarProyecto, borrarProyecto,
     crearTarea, editarTarea, archivarTarea, restaurarTarea, borrarTarea,

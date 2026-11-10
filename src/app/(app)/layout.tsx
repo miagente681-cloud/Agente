@@ -1,3 +1,4 @@
+import { AvisoLlamada } from "@/components/aviso-llamada";
 import { BarraInferior, BarraLateral } from "@/components/navegacion";
 import { DetalleTarea } from "@/components/tareas/detalle-tarea";
 import { ProveedorDatos } from "@/lib/datos/almacen";
@@ -22,6 +23,7 @@ export default function LayoutApp({ children }: LayoutProps<"/">) {
         <BarraInferior />
       </div>
       <DetalleTarea />
+      <AvisoLlamada />
     </ProveedorDatos>
   );
 }

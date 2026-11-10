@@ -43,7 +43,10 @@ const ENTORNO_EXTRA = {
   AZURE_SPEECH_REGION: "brazilsouth",
   AZURE_SPEECH_TOKEN_URL: MODELOS,
   SUPABASE_SERVICE_ROLE_KEY: "servicio-falsa",
+  CRON_SECRET: "secreto-de-prueba",
 };
+const tick = (secreto) =>
+  fetch(`${BASE}/api/cron/tick`, { method: "POST", headers: secreto ? { Authorization: `Bearer ${secreto}` } : {} });
 
 /**
  * Proveedor de voz de mentira que se inyecta en la página: anota lo que el
@@ -537,6 +540,61 @@ async function main() {
     await conVoz.getByText("Cupo agotado").waitFor();
     ok("la configuración muestra el uso del mes y el aviso de cupo");
     await conVoz.close();
+
+    console.log("Llamadas programadas");
+    await pagina.goto(BASE + "/configuracion");
+    await pagina.getByRole("button", { name: "Agregar rutina" }).click();
+    await pagina.getByLabel("Nombre de la rutina").waitFor();
+    await pagina.getByRole("button", { name: "Sábado" }).click();
+    await pagina.getByLabel("Foco de la llamada").fill("Revisión completa de todos los proyectos");
+    await pagina.getByLabel("Foco de la llamada").blur();
+    await pagina.getByRole("button", { name: "Agregar franja" }).click();
+    await pagina.getByLabel("Margen para atender (min)").fill("15");
+    await pagina.getByLabel("Margen para atender (min)").blur();
+    await pagina.waitForTimeout(400);
+    e = await estado();
+    afirmar(e.call_routines.length === 1 && e.call_routines[0].weekdays.includes(6) && e.call_routines[0].focus === "Revisión completa de todos los proyectos",
+      "crear y editar una rutina de llamada (días, foco)");
+    afirmar(e.availability_windows.length === 1 && e.profiles[0].agent_config.margen_minutos === 15, "franja de disponibilidad y margen guardados");
+    await pagina.getByText("Faltan las claves de notificaciones en el servidor").waitFor();
+    ok("sin claves VAPID la pantalla avisa que falta configurar, sin romperse");
+    await captura("17-config-llamadas");
+    await pagina.getByRole("button", { name: /Borrar la rutina/ }).click();
+    await pagina.getByRole("button", { name: "Borrar esta franja" }).click();
+    await pagina.getByLabel("Margen para atender (min)").fill("10");
+    await pagina.getByLabel("Margen para atender (min)").blur();
+    await pagina.waitForTimeout(300);
+
+    afirmar((await tick()).status === 401 && (await tick("otro-secreto")).status === 401, "el programador rechaza pedidos sin el secreto correcto");
+    // Una rutina para hoy, a esta misma hora (en la zona del perfil).
+    const ahoraMvd = new Intl.DateTimeFormat("en-GB", { timeZone: "America/Montevideo", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date());
+    const diaMvd = new Date(fechaMvd(0) + "T12:00:00Z").getUTCDay();
+    await sembrar("call_routines", { name: "Repaso de prueba", weekdays: [diaMvd], local_time: ahoraMvd + ":00", target_minutes: 10, focus: "Repaso breve del día" });
+    const r1 = await (await tick("secreto-de-prueba")).json();
+    const r2 = await (await tick("secreto-de-prueba")).json();
+    afirmar(r1.ok && r1.creadas === 1 && r2.notificadas === 1 && r2.creadas === 0, `el programador crea la llamada de la rutina y la marca a su hora (${JSON.stringify(r2)})`);
+    const programada = (await estado()).sessions.find((x) => x.status === "notificada");
+    await pagina.goto(BASE + "/hoy");
+    await pagina.getByRole("alert").getByText("Tu Agente te está llamando").waitFor();
+    await captura("18-aviso-llamada");
+    await pagina.getByRole("link", { name: "Atender" }).click();
+    await pagina.waitForURL(new RegExp(`/llamada/${programada.id}$`));
+    await pagina.getByRole("button", { name: "Atender" }).waitFor();
+    ok("dentro de la app aparece el aviso de llamada en espera y lleva a la llamada");
+
+    // La ignoro: pasan 11 minutos desde el aviso.
+    await editar("sessions", programada.id, { notified_at: new Date(Date.now() - 11 * 60000).toISOString(), scheduled_at: new Date(Date.now() - 11 * 60000).toISOString() });
+    const r3 = await (await tick("secreto-de-prueba")).json();
+    e = await estado();
+    const nueva = e.sessions.find((x) => x.rescheduled_from === programada.id);
+    afirmar(r3.reprogramadas === 1 && e.sessions.find((x) => x.id === programada.id).status === "reprogramada" && nueva?.status === "programada" && new Date(nueva.scheduled_at) > new Date(),
+      "si ignoro el aviso, la llamada queda reprogramada para más tarde");
+    await pagina.goto(BASE + "/calendario");
+    await pagina.getByText(/Llamada del Agente a las|llamada/).first().waitFor({ state: "attached" });
+    await pagina.goto(BASE + "/sesiones");
+    await pagina.getByText("Reprogramada").first().waitFor();
+    ok("la llamada reprogramada se ve en Sesiones");
+    await editar("sessions", nueva.id, { status: "completada" });
 
     console.log("Celular (390 px)");
     const movil = await navegador.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });

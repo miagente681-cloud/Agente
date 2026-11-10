@@ -3,6 +3,7 @@ import Link from "next/link";
 import { EncabezadoPagina } from "@/components/ui/varios";
 import { ConfigAgente } from "./agente";
 import { Cuenta } from "./cuenta";
+import { ConfigLlamadas } from "./llamadas";
 import { ConfigVoz } from "./voz";
 
 export const metadata: Metadata = { title: "Configuración" };
@@ -33,6 +34,7 @@ export default function Configuracion() {
         </nav>
         <Cuenta />
         <ConfigAgente />
+        <ConfigLlamadas />
         <ConfigVoz />
       </div>
     </>
