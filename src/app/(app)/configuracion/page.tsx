@@ -3,6 +3,7 @@ import Link from "next/link";
 import { EncabezadoPagina } from "@/components/ui/varios";
 import { ConfigAgente } from "./agente";
 import { Cuenta } from "./cuenta";
+import { ConfigDatos } from "./datos";
 import { ConfigLlamadas } from "./llamadas";
 import { ConfigVoz } from "./voz";
 
@@ -36,6 +37,7 @@ export default function Configuracion() {
         <ConfigAgente />
         <ConfigLlamadas />
         <ConfigVoz />
+        <ConfigDatos />
       </div>
     </>
   );

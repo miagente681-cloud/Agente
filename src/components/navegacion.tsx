@@ -60,6 +60,9 @@ export function BarraLateral() {
           </Link>
         );
       })}
+      <p className="mt-auto px-2 pb-1 text-xs text-texto-3">
+        <span className="kbd">Ctrl K</span> buscar · <span className="kbd">?</span> atajos
+      </p>
     </nav>
   );
 }

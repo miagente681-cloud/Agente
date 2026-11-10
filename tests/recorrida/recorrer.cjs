@@ -596,12 +596,46 @@ async function main() {
     ok("la llamada reprogramada se ve en Sesiones");
     await editar("sessions", nueva.id, { status: "completada" });
 
+    console.log("Paleta, atajos y datos");
+    await pagina.goto(BASE + "/hoy");
+    await pagina.getByRole("heading", { name: "Hoy", exact: true }).waitFor();
+    await pagina.keyboard.press("g");
+    await pagina.keyboard.press("t");
+    await pagina.waitForURL(/\/tablero$/);
+    ok("atajo «g t» va al Tablero");
+    await pagina.getByRole("heading", { name: "Tablero" }).waitFor();
+    await pagina.keyboard.press("Control+k");
+    await pagina.getByLabel("Buscar secciones, proyectos y tareas").fill("correr");
+    await pagina.getByRole("listbox", { name: "Resultados" }).getByRole("option", { name: /Correr 10 km/ }).first().waitFor();
+    await pagina.keyboard.press("Enter");
+    await pagina.waitForURL(/\/proyectos\/[0-9a-f-]{36}$/);
+    ok("la paleta (Ctrl K) busca y abre un proyecto");
+    await pagina.getByLabel("Nombre del proyecto").waitFor();
+    await pagina.locator("body").click({ position: { x: 5, y: 400 } });
+    await pagina.keyboard.press("n");
+    await pagina.getByLabel("Título de la tarea").fill("Comprar zapatillas mañana p1");
+    await pagina.getByRole("listbox", { name: "Resultados" }).getByRole("option", { name: /Crear «Comprar zapatillas»/ }).waitFor();
+    await pagina.keyboard.press("Enter");
+    await pagina.getByText(/Tarea creada en/).waitFor();
+    e = await estado();
+    afirmar(e.tasks.find((t) => t.title === "Comprar zapatillas")?.due_date === fechaMvd(1), "atajo «n»: tarea nueva desde cualquier pantalla, con fecha y prioridad");
+    await pagina.keyboard.press("?");
+    await pagina.getByRole("dialog", { name: "Atajos de teclado" }).waitFor();
+    await pagina.keyboard.press("Escape");
+
+    await pagina.goto(BASE + "/configuracion");
+    const descarga = pagina.waitForEvent("download");
+    await pagina.getByRole("button", { name: "Exportar todo (JSON)" }).click();
+    const exportado = JSON.parse(require("node:fs").readFileSync(await (await descarga).path(), "utf8"));
+    afirmar(exportado.tasks.length === e.tasks.length && exportado.memories.length === e.memories.length && exportado.messages.length > 5 && exportado.sessions.length >= 4,
+      "exportar baja todos mis datos en un archivo");
+
     console.log("Celular (390 px)");
     const movil = await navegador.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
     await movil.addCookies([{ ...cookieDeSesion(), url: BASE }]);
     const pm = await movil.newPage();
     pm.on("pageerror", (x) => errores.push("móvil: " + String(x)));
-    for (const [ruta, nombre] of [["/hoy", "07-movil-hoy"], ["/tablero", "08-movil-tablero"], ["/calendario", "09-movil-calendario"], ["/proyectos", "10-movil-proyectos"]]) {
+    for (const [ruta, nombre] of [["/hoy", "07-movil-hoy"], ["/tablero", "08-movil-tablero"], ["/calendario", "09-movil-calendario"], ["/proyectos", "10-movil-proyectos"], ["/chat", "19-movil-chat"], ["/configuracion", "20-movil-configuracion"], ["/memoria", "21-movil-memoria"], ["/sesiones", "22-movil-sesiones"], ["/bienvenida", "23-movil-bienvenida"]]) {
       await pm.goto(BASE + ruta);
       await pm.waitForLoadState("networkidle");
       const desborde = await pm.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -613,6 +647,16 @@ async function main() {
     await pm.getByLabel("Título").waitFor();
     await pm.screenshot({ path: path.join(capturas, "11-movil-detalle.png") });
     ok("el detalle de tarea abre en el celular");
+
+    console.log("Borrar todos mis datos");
+    await pagina.goto(BASE + "/configuracion");
+    await pagina.getByRole("button", { name: "Borrar todos mis datos" }).click();
+    afirmar(await pagina.getByRole("button", { name: "Borrar todo", exact: true }).isDisabled(), "borrar todo pide escribir una palabra para confirmar");
+    await pagina.getByLabel("Escribí BORRAR para confirmar").fill("BORRAR");
+    await pagina.getByRole("button", { name: "Borrar todo", exact: true }).click();
+    await pagina.waitForURL(/\/ingresar/);
+    e = await estado();
+    afirmar(["tasks", "projects", "sessions", "messages", "memories", "change_log", "profiles"].every((t) => e[t].length === 0), "borrar todo no deja nada mío en la base");
 
     const reales = errores.filter((x) => !/favicon|sw\.js|Failed to load resource/.test(x));
     afirmar(reales.length === 0, "sin errores de JavaScript en la consola" + (reales.length ? ": " + reales.join(" | ") : ""));

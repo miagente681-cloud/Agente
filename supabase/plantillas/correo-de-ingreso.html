@@ -1,0 +1,6 @@
+<h2>Tu acceso a MiAgente</h2>
+<p>Tu código es: <strong>{{ .Token }}</strong></p>
+<p>O entrá con este enlace:
+  <a href="{{ .SiteURL }}/auth/confirmar?token_hash={{ .TokenHash }}&type=email">Ingresar</a>
+</p>
+<p>Si no pediste este correo, ignoralo.</p>
