@@ -174,6 +174,9 @@ export async function* correrTurno(p: {
     } catch (error) {
       if (p.senal?.aborted) throw error;
       const clase: ClaseError = error instanceof ErrorProveedor ? error.clase : "otro";
+      // Queda en los registros del servidor para poder diagnosticar (modelo mal
+      // escrito, cupo, clave inválida). El mensaje del proveedor no trae claves.
+      console.warn(`[agente] ${prov.id} (${prov.modelo()}) falló: ${clase}. ${error instanceof Error ? error.message : ""}`);
       if (clase === "limite") enPausa.set(prov.id, Date.now() + PAUSA_POR_LIMITE_MS);
       cola.shift();
       if (texto) yield { tipo: "reiniciar" };
@@ -264,8 +267,9 @@ export async function completar(proveedores: ProveedorLLM[], pedido: PedidoLLM):
       let texto = "";
       for await (const t of prov.generar(pedido)) if (t.tipo === "texto") texto += t.texto;
       if (texto.trim()) return texto;
-    } catch {
+    } catch (error) {
       // Se prueba el siguiente.
+      console.warn(`[agente] ${prov.id} (${prov.modelo(pedido.liviano)}) falló en segundo plano. ${error instanceof Error ? error.message : ""}`);
     }
   }
   return null;
