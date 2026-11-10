@@ -117,6 +117,10 @@ La red de la sesión sigue sin dejar abrir las páginas oficiales: se verificó 
 - **Voces**: Mateo y Valentina (Uruguay), Tomás y Elena (Argentina). Mateo por defecto.
 - **Una llamada atendida que queda abierta más de 3 horas** la cierra el programador.
 
+- **Chat de voz cuando quieras (cambio pedido después de la entrega).** La especificación decía que las llamadas solo las iniciaba el Agente. Ahora el botón «Hablar» del chat abre un chat de voz: sigue la conversación abierta o empieza una nueva. Las llamadas programadas siguen igual.
+- **En toda pantalla de voz se puede escribir.** Hay un campo de texto siempre visible y una opción para entrar sin micrófono: la persona escribe y el Agente responde hablando. El micrófono se puede activar después sin cortar. Si se niega el permiso de micrófono, la sesión sigue en ese modo en lugar de fallar.
+- **En un chat de voz empieza la persona**; en una llamada programada y en la entrevista inicial abre el Agente.
+
 ## Fase 6 — Llamadas programadas
 
 - **Sin franjas de disponibilidad cargadas** se asume de 8:00 a 22:00, todos los días.

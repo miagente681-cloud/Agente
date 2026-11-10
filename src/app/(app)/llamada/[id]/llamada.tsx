@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Hand, MessageSquareText, Mic, MicOff, PhoneOff } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowUp, Hand, Keyboard, MessageSquareText, Mic, MicOff, PhoneOff } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { TarjetaCambio } from "@/components/agente/tarjeta-cambio";
 import { Boton } from "@/components/ui/boton";
 import { pedirTurno } from "@/lib/agente/cliente";
@@ -30,6 +30,7 @@ const FASE: Record<EstadoLlamada["fase"], string> = {
   cerrada: "Llamada terminada",
 };
 const MOTOR: Record<string, string> = { azure: "Azure", navegador: "la del navegador", prueba: "de prueba" };
+const ROTULO: Record<string, string> = { onboarding: "Entrevista inicial", chat: "Chat de voz", llamada_programada: "Llamada" };
 
 const pedirToken = (): Promise<RespuestaToken> =>
   fetch("/api/voice/token", { method: "POST" })
@@ -45,9 +46,10 @@ export function Llamada({ id }: { id: string }) {
   const { recargar } = useDatos();
   const [pantalla, setPantalla] = useState<Pantalla>({ tipo: "cargando" });
   const [estado, setEstado] = useState<EstadoLlamada | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [conMicrofono, setConMicrofono] = useState(false);
+  const [texto, setTexto] = useState("");
   const control = useRef<ControlLlamada | null>(null);
-  const soltar = useRef<(() => void) | null>(null);
+  const limpiezas = useRef<(() => void)[]>([]);
   const finTranscripcion = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -60,12 +62,8 @@ export function Llamada({ id }: { id: string }) {
       ]);
       if (!vigente) return;
       const sesion = data as Sesion | null;
-      if (!sesion) return setPantalla({ tipo: "no_disponible", mensaje: "Esta llamada no existe." });
+      if (!sesion) return setPantalla({ tipo: "no_disponible", mensaje: "Esta sesión no existe." });
       if (["completada", "perdida", "reprogramada"].includes(sesion.status)) return router.replace(`/sesiones/${id}`);
-      // Las llamadas las inicia el Agente a su hora; la única excepción es la entrevista inicial.
-      if (sesion.kind === "chat") {
-        return setPantalla({ tipo: "no_disponible", mensaje: "Esta sesión es un chat de texto. Las llamadas las inicia el Agente en los horarios de tus rutinas." });
-      }
       if (sesion.status === "programada" && sesion.scheduled_at && new Date(sesion.scheduled_at).getTime() > Date.now() + 60_000) {
         const hora = new Date(sesion.scheduled_at).toLocaleString("es-UY", { weekday: "long", hour: "2-digit", minute: "2-digit" });
         return setPantalla({ tipo: "no_disponible", mensaje: `Todavía no es la hora de esta llamada: está programada para el ${hora}.` });
@@ -94,8 +92,8 @@ export function Llamada({ id }: { id: string }) {
     reportarUso();
     control.current?.cerrar();
     control.current = null;
-    soltar.current?.();
-    soltar.current = null;
+    limpiezas.current.forEach((f) => f());
+    limpiezas.current = [];
   }, [reportarUso]);
 
   // Al salir de la pantalla se corta todo: micrófono, voz y contadores.
@@ -105,56 +103,73 @@ export function Llamada({ id }: { id: string }) {
     finTranscripcion.current?.scrollIntoView({ block: "end" });
   }, [estado?.lineas, estado?.parcial]);
 
+  /**
+   * Arma el proveedor de voz: Azure si hay token, si no el navegador. Sin
+   * micrófono sirve igual para que el Agente hable; solo no escucha.
+   */
+  async function armarVoz(microfono: MediaStream | null): Promise<{ voz: ProveedorVoz; aviso: string | null }> {
+    const token = await pedirToken();
+    let aviso: string | null = null;
+    let azure: ProveedorVoz | null = null;
+    if (token.azure) {
+      azure = await crearVozAzure({
+        inicial: token,
+        pedirToken,
+        microfono,
+        alAgotarse: () =>
+          control.current?.cambiarVoz(crearVozNavegador(), "Se agotó el cupo de voz de Azure de este mes: sigo con la voz del navegador."),
+      }).catch(() => null);
+      if (azure && token.aviso) aviso = `Vas por el ${token.porcentaje} % del cupo gratuito de voz de este mes.`;
+    } else if (token.motivo === "agotado") {
+      aviso = "Se agotó el cupo de voz de Azure de este mes: uso la voz del navegador.";
+    }
+    const voz = azure ?? crearVozNavegador();
+    if (microfono && voz.id === "navegador" && !navegadorEscucha()) {
+      aviso = "Este navegador no reconoce voz: podés escribir abajo y el Agente te responde hablando.";
+    }
+    return { voz, aviso };
+  }
+
+  /** Pide el micrófono y deja listo el medidor de volumen. Devuelve null si no hay permiso. */
+  async function abrirMicrofono(): Promise<{ mic: MediaStream; nivel: () => number } | null> {
+    try {
+      const mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      const monitor = crearMonitor(mic);
+      limpiezas.current.push(() => mic.getTracks().forEach((t) => t.stop()), monitor.cerrar);
+      return { mic, nivel: monitor.nivel };
+    } catch {
+      return null;
+    }
+  }
+
   /** Tiene que arrancar desde un toque: el navegador no da micrófono ni audio de otra forma. */
-  async function atender(sesion: Sesion, yaEmpezada: boolean) {
-    setError(null);
+  async function empezar(sesion: Sesion, yaEmpezada: boolean, quiereMicrofono: boolean) {
     setPantalla({ tipo: "en_llamada", sesion });
     const prueba = vozDePrueba();
-    let microfono: MediaStream | null = null;
     let voz: ProveedorVoz;
     let aviso: string | null = null;
     let nivel: (() => number) | undefined;
-    const limpiezas: (() => void)[] = [];
+    let hayMicrofono = false;
 
     if (prueba) {
       voz = prueba;
       nivel = prueba.nivel;
+      hayMicrofono = quiereMicrofono;
     } else {
-      try {
-        microfono = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-      } catch {
-        setPantalla({ tipo: "lista", sesion, yaEmpezada });
-        return setError("No tengo permiso para usar el micrófono. Habilitalo en los ajustes del sitio, o seguí por texto.");
-      }
-      const mic = microfono;
-      limpiezas.push(() => mic.getTracks().forEach((t) => t.stop()));
-      const monitor = crearMonitor(mic);
-      limpiezas.push(monitor.cerrar);
-      nivel = monitor.nivel;
-
-      const token = await pedirToken();
-      let azure: ProveedorVoz | null = null;
-      if (token.azure) {
-        azure = await crearVozAzure({
-          inicial: token,
-          pedirToken,
-          microfono: mic,
-          alAgotarse: () =>
-            control.current?.cambiarVoz(crearVozNavegador(), "Se agotó el cupo de voz de Azure de este mes: sigo con la voz del navegador."),
-        }).catch(() => null);
-        if (azure && token.aviso) aviso = `Vas por el ${token.porcentaje} % del cupo gratuito de voz de este mes.`;
-      } else if (token.motivo === "agotado") {
-        aviso = "Se agotó el cupo de voz de Azure de este mes: uso la voz del navegador.";
-      }
-      voz = azure ?? crearVozNavegador();
-      if (voz.id === "navegador" && !navegadorEscucha()) {
-        aviso = "Este navegador no reconoce voz. Pasá la llamada a texto con el botón de abajo.";
+      const abierto = quiereMicrofono ? await abrirMicrofono() : null;
+      hayMicrofono = Boolean(abierto);
+      nivel = abierto?.nivel;
+      ({ voz, aviso } = await armarVoz(abierto?.mic ?? null));
+      if (quiereMicrofono && !abierto) {
+        aviso = "No tengo permiso para usar el micrófono. Podés escribir abajo y te respondo hablando.";
       }
     }
+    setConMicrofono(hayMicrofono);
 
     const c: ControlLlamada = new ControlLlamada({
       voz,
       nivel,
+      silenciado: !hayMicrofono,
       alCambiar: setEstado,
       turno: (pedido, senal) =>
         pedirTurno({ ...pedido, sesionId: sesion.id, canal: "voz", voz: c.estado.motor === "azure" ? "azure" : "navegador" }, senal),
@@ -163,12 +178,34 @@ export function Llamada({ id }: { id: string }) {
     setEstado({ ...c.estado, aviso });
     const volumen = setInterval(() => c.revisarVolumen(), 60);
     const uso = setInterval(reportarUso, 30_000);
-    soltar.current = () => {
-      clearInterval(volumen);
-      clearInterval(uso);
-      limpiezas.forEach((f) => f());
-    };
-    await c.empezar(!yaEmpezada);
+    limpiezas.current.push(() => clearInterval(volumen), () => clearInterval(uso));
+    // En una llamada o en la entrevista abre el Agente; en un chat de voz empieza la persona.
+    await c.empezar(!yaEmpezada && sesion.kind !== "chat");
+  }
+
+  /** El botón del micrófono: silencia, vuelve a escuchar o, si nunca se activó, lo pide. */
+  async function alternarMicrofono() {
+    const c = control.current;
+    if (!c) return;
+    if (conMicrofono) return c.silenciar(!c.estado.silenciado);
+    if (vozDePrueba()) {
+      setConMicrofono(true);
+      return c.silenciar(false);
+    }
+    const abierto = await abrirMicrofono();
+    if (!abierto) return c.avisar("No tengo permiso para usar el micrófono. Habilitalo en los ajustes del sitio; mientras tanto podés escribir.");
+    const { voz, aviso } = await armarVoz(abierto.mic);
+    c.ponerNivel(abierto.nivel);
+    c.cambiarVoz(voz, aviso);
+    setConMicrofono(true);
+    c.silenciar(false);
+  }
+
+  function enviarTexto(e: FormEvent) {
+    e.preventDefault();
+    if (!texto.trim()) return;
+    control.current?.escribir(texto);
+    setTexto("");
   }
 
   async function cortar() {
@@ -202,48 +239,59 @@ export function Llamada({ id }: { id: string }) {
   }
   if (pantalla.tipo === "lista") {
     const { sesion, yaEmpezada } = pantalla;
+    const esChat = sesion.kind === "chat";
     return (
       <div className={marco}>
         <div className="m-auto flex max-w-sm flex-col items-center gap-5 text-center">
-          <p className="rotulo">{sesion.kind === "onboarding" ? "Entrevista inicial" : "Llamada del Agente"}</p>
-          <h1 className="titulo-pagina">{yaEmpezada ? "¿Seguimos?" : "Tu Agente te está llamando"}</h1>
+          <p className="rotulo">{esChat ? "Chat de voz" : sesion.kind === "onboarding" ? "Entrevista inicial" : "Llamada del Agente"}</p>
+          <h1 className="titulo-pagina">
+            {yaEmpezada ? "¿Seguimos?" : esChat ? "Hablá con tu Agente" : "Tu Agente te está llamando"}
+          </h1>
           {sesion.focus ? <p className="text-sm text-texto-2">{sesion.focus}</p> : null}
-          {error ? <p role="alert" className="text-sm text-peligro">{error}</p> : null}
-          <Boton variante="primario" className="!h-14 !rounded-full !px-8 !text-base" onClick={() => void atender(sesion, yaEmpezada)}>
+          <Boton variante="primario" className="!h-14 !rounded-full !px-8 !text-base" onClick={() => void empezar(sesion, yaEmpezada, true)}>
             <Mic size={20} aria-hidden />
-            {yaEmpezada ? "Seguir hablando" : "Atender"}
+            {yaEmpezada ? "Seguir hablando" : esChat ? "Empezar a hablar" : "Atender"}
+          </Boton>
+          <Boton className="!rounded-full" onClick={() => void empezar(sesion, yaEmpezada, false)}>
+            <Keyboard size={16} aria-hidden />
+            Sin micrófono: yo escribo, el Agente habla
           </Boton>
           <button type="button" onClick={pasarATexto} className="rounded-sm text-sm text-texto-2 hover:text-texto">
-            No puedo hablar: hacerla por escrito
+            Hacerla toda por escrito
           </button>
+          {esChat ? (
+            <Link href="/chat" className="rounded-sm text-sm text-texto-3 hover:text-texto">Volver</Link>
+          ) : null}
         </div>
       </div>
     );
   }
 
   const fase = estado?.fase ?? "conectando";
+  const silenciado = Boolean(estado?.silenciado);
+  const esperando = fase === "escuchando";
   return (
     <div className={marco}>
       <header className="flex items-center justify-between gap-3">
-        <p className="rotulo">{pantalla.sesion.kind === "onboarding" ? "Entrevista inicial" : "Llamada"}</p>
+        <p className="rotulo">{ROTULO[pantalla.sesion.kind] ?? "Llamada"}</p>
         {estado ? <p className="text-xs text-texto-3">Voz: {MOTOR[estado.motor]}</p> : null}
       </header>
 
-      <div className="flex flex-col items-center gap-3 py-6">
+      <div className="flex flex-col items-center gap-3 py-5">
         <span
           aria-hidden
           className={`flex h-20 w-20 items-center justify-center rounded-full border-2 transition-colors ${
-            fase === "escuchando"
+            esperando && !silenciado
               ? "border-ok bg-ok-suave"
               : fase === "hablando"
                 ? "animate-pulse border-acento bg-acento-suave"
                 : "border-borde-fuerte bg-panel"
           }`}
         >
-          {estado?.silenciado ? <MicOff size={28} className="text-texto-3" /> : <Mic size={28} className={fase === "escuchando" ? "text-ok" : fase === "hablando" ? "text-acento" : "text-texto-3"} />}
+          {silenciado ? <MicOff size={28} className="text-texto-3" /> : <Mic size={28} className={esperando ? "text-ok" : fase === "hablando" ? "text-acento" : "text-texto-3"} />}
         </span>
         <p role="status" aria-live="polite" className="text-lg font-medium">
-          {estado?.silenciado && fase === "escuchando" ? "Micrófono silenciado" : FASE[fase]}
+          {silenciado && esperando ? (conMicrofono ? "Micrófono silenciado" : "Escribí abajo") : FASE[fase]}
         </p>
         {fase === "hablando" || fase === "pensando" ? (
           <Boton tamano="sm" onClick={() => control.current?.interrumpir()}>
@@ -251,7 +299,9 @@ export function Llamada({ id }: { id: string }) {
             Interrumpir
           </Boton>
         ) : (
-          <span className="h-8 text-xs text-texto-3">{fase === "escuchando" && !estado?.silenciado ? "Hablá cuando quieras" : ""}</span>
+          <span className="h-8 text-xs text-texto-3">
+            {esperando ? (silenciado ? "El Agente te responde hablando" : "Hablá o escribí cuando quieras") : ""}
+          </span>
         )}
       </div>
 
@@ -283,14 +333,34 @@ export function Llamada({ id }: { id: string }) {
         <div ref={finTranscripcion} />
       </div>
 
-      <div className="mx-auto mt-4 flex w-full max-w-xl items-center justify-center gap-3">
+      {/* Siempre se puede escribir: con el micrófono apagado, o cuando no conviene hablar. */}
+      <form onSubmit={enviarTexto} className="mx-auto mt-3 flex w-full max-w-xl items-center gap-2 rounded-xl border border-borde-fuerte bg-elevado p-1.5">
+        <label htmlFor="texto-llamada" className="sr-only">
+          Escribirle al Agente
+        </label>
+        <input
+          id="texto-llamada"
+          value={texto}
+          maxLength={4000}
+          autoComplete="off"
+          enterKeyHint="send"
+          placeholder="O escribí acá…"
+          onChange={(e) => setTexto(e.target.value)}
+          className="h-9 min-w-0 flex-1 bg-transparent px-2.5 text-[15px] placeholder:text-texto-3 focus:outline-none"
+        />
+        <Boton type="submit" variante="primario" aria-label="Enviar" disabled={!texto.trim() || !estado} className="!h-9 !w-9 shrink-0 !rounded-lg !px-0">
+          <ArrowUp size={18} aria-hidden />
+        </Boton>
+      </form>
+
+      <div className="mx-auto mt-3 flex w-full max-w-xl items-center justify-center gap-3">
         <Boton
           className="!h-14 flex-1 !rounded-full"
-          aria-pressed={Boolean(estado?.silenciado)}
-          onClick={() => control.current?.silenciar(!estado?.silenciado)}
+          aria-pressed={!silenciado}
+          onClick={() => void alternarMicrofono()}
         >
-          {estado?.silenciado ? <MicOff size={18} aria-hidden /> : <Mic size={18} aria-hidden />}
-          {estado?.silenciado ? "Activar" : "Silenciar"}
+          {silenciado ? <MicOff size={18} aria-hidden /> : <Mic size={18} aria-hidden />}
+          {silenciado ? (conMicrofono ? "Activar" : "Usar micrófono") : "Silenciar"}
         </Boton>
         <Boton className="!h-14 flex-1 !rounded-full" onClick={pasarATexto}>
           <MessageSquareText size={18} aria-hidden />

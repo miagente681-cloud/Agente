@@ -45,10 +45,32 @@ export class ControlLlamada {
       alCambiar: (estado: EstadoLlamada) => void;
       /** Volumen del micrófono (0 a 1), para detectar interrupciones. */
       nivel?: () => number;
+      /** Empieza sin escuchar: la persona escribe (o no dio permiso de micrófono). */
+      silenciado?: boolean;
     },
   ) {
     this.voz = p.voz;
-    this.estado = { fase: "conectando", lineas: [], parcial: "", silenciado: false, motor: p.voz.id, aviso: null };
+    this.estado = {
+      fase: "conectando", lineas: [], parcial: "", silenciado: Boolean(p.silenciado), motor: p.voz.id, aviso: null,
+    };
+  }
+
+  /** Conecta el medidor de volumen cuando el micrófono se activa a mitad de la sesión. */
+  ponerNivel(nivel: () => number): void {
+    this.p.nivel = nivel;
+  }
+
+  avisar(mensaje: string): void {
+    this.poner({ aviso: mensaje });
+  }
+
+  /** La persona escribió en lugar de hablar. El Agente responde igual en voz alta. */
+  escribir(texto: string): void {
+    const limpio = texto.trim();
+    if (!limpio || this.estado.fase === "cerrada") return;
+    if (this.estado.fase !== "escuchando") this.cortarAlAgente();
+    this.poner({ parcial: "", lineas: [...this.estado.lineas, { id: this.n++, quien: "vos", texto: limpio, cambios: [] }] });
+    void this.turno({ texto: limpio });
   }
 
   private poner(cambios: Partial<EstadoLlamada>) {
@@ -165,11 +187,11 @@ export class ControlLlamada {
   }
 
   /** Cambia de proveedor a mitad de la llamada (por ejemplo, si se agotó el cupo de Azure). */
-  cambiarVoz(nueva: ProveedorVoz, aviso: string): void {
+  cambiarVoz(nueva: ProveedorVoz, aviso: string | null): void {
     const anterior = this.voz;
     this.voz = nueva;
     anterior.cerrar();
-    this.poner({ motor: nueva.id, aviso });
+    this.poner({ motor: nueva.id, aviso: aviso ?? this.estado.aviso });
     if (this.estado.fase === "escuchando") void this.escuchar();
   }
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, Mic } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { TarjetaCambio, type CambioVista } from "@/components/agente/tarjeta-cambio";
 import { Boton } from "@/components/ui/boton";
@@ -158,6 +158,17 @@ export function Chat() {
     router.push(`/sesiones/${sesion.id}`);
   }
 
+  /** Pasa a voz: sigue la conversación abierta o empieza un chat de voz nuevo. */
+  async function hablar() {
+    if (sesion) return router.push(`/llamada/${sesion.id}`);
+    const { data } = await supabaseBrowser()
+      .from("sessions")
+      .insert({ kind: "chat", channel: "voz", status: "en_curso", started_at: new Date().toISOString() })
+      .select("id")
+      .single();
+    if (data) router.push(`/llamada/${(data as { id: string }).id}`);
+  }
+
   const hayDichos = items.some((i) => i.rol === "usuario");
 
   return (
@@ -170,6 +181,10 @@ export function Chat() {
             <Link href="/sesiones" className="rounded-md px-2 py-1.5 text-[13px] text-texto-2 hover:text-texto">
               Sesiones
             </Link>
+            <Boton tamano="sm" variante="primario" onClick={() => void hablar()} disabled={cargando || enviando || cerrando}>
+              <Mic size={14} aria-hidden />
+              Hablar
+            </Boton>
             {sesion && hayDichos ? (
               <Boton tamano="sm" onClick={terminar} disabled={cerrando || enviando}>
                 {cerrando ? "Cerrando…" : "Terminar"}

@@ -532,6 +532,28 @@ async function main() {
     ok("pasar la llamada a texto conserva la conversación");
     await fetch(`${FALSO}/__editar`, { method: "POST", body: JSON.stringify({ tabla: "sessions", id: otra.id, cambios: { status: "completada" } }) });
 
+    // Chat de voz iniciado por la persona, sin micrófono: escribe y el Agente habla.
+    await guion([{ texto: "Anotado. ¿Algo más?" }]);
+    await conVoz.goto(BASE + "/chat");
+    await conVoz.getByRole("button", { name: "Hablar" }).click();
+    await conVoz.waitForURL(/\/llamada\/[0-9a-f-]{36}$/);
+    // Si había una charla abierta, la sigue por voz; si no, crea un chat de voz nuevo.
+    await conVoz.getByRole("button", { name: /Sin micrófono/ }).click();
+    await conVoz.getByText("Escribí abajo").waitFor();
+    afirmar((await conVoz.evaluate(() => window.__vozDePrueba.escuchando)) === false, "chat de voz sin micrófono: no intenta escuchar");
+    const dichoAntes = await conVoz.evaluate(() => window.__vozDePrueba.dicho.length);
+    await conVoz.getByLabel("Escribirle al Agente").fill("Anotame comprar pintura");
+    await conVoz.getByLabel("Escribirle al Agente").press("Enter");
+    await conVoz.getByText("Anotado. ¿Algo más?").waitFor();
+    afirmar((await conVoz.evaluate(() => window.__vozDePrueba.dicho.length)) === dichoAntes + 1, "escribo en el chat de voz y el Agente responde hablando");
+    await conVoz.getByRole("button", { name: "Usar micrófono" }).click();
+    await conVoz.getByText("Te escucho").waitFor();
+    afirmar(await conVoz.evaluate(() => window.__vozDePrueba.escuchando), "el micrófono se puede activar después, sin cortar");
+    e = await estado();
+    const deVoz = e.sessions.find((x) => x.id === conVoz.url().split("/").pop());
+    afirmar(deVoz?.kind === "chat" && sistemaDe((await pedidosAlModelo()).at(-1)).includes("conversación de VOZ"), "el chat de voz lo puedo iniciar yo, y el modelo responde en formato de voz");
+    await editar("sessions", deVoz.id, { status: "completada" });
+
     // Sin cupo de Azure el servidor deja de entregar tokens.
     await fetch(`${FALSO}/rest/v1/rpc/sumar_uso_voz`, { method: "POST", body: JSON.stringify({ p_user: "11111111-1111-1111-1111-111111111111", p_stt: 18000, p_tts: 0 }) });
     const sinCupo = await conVoz.evaluate(() => fetch("/api/voice/token", { method: "POST" }).then((r) => r.json()));

@@ -213,6 +213,45 @@ describe("control de la llamada", () => {
     expect(estado().lineas).toHaveLength(1);
   });
 
+  it("sin micrófono: la persona escribe y el Agente responde hablando", async () => {
+    const voz = vozFalsa();
+    const pedidos: { texto?: string; inicio?: boolean }[] = [];
+    let estado!: EstadoLlamada;
+    const control = new ControlLlamada({
+      voz,
+      silenciado: true,
+      alCambiar: (e) => (estado = e),
+      async *turno(pedido) {
+        pedidos.push(pedido);
+        await tic();
+        yield { tipo: "texto", texto: "Dale, lo anoto para el jueves." };
+      },
+    });
+    await control.empezar(false);
+    expect(voz.escuchando).toBe(false); // no intenta usar el micrófono
+    expect(estado).toMatchObject({ fase: "escuchando", silenciado: true });
+
+    control.escribir("  Anotame llamar al plomero  ");
+    await tic(); await tic(); await tic();
+    expect(pedidos).toEqual([{ texto: "Anotame llamar al plomero" }]);
+    expect(voz.dicho).toEqual(["Dale, lo anoto para el jueves."]); // responde en voz alta
+    expect(estado.lineas.map((l) => [l.quien, l.texto])).toEqual([
+      ["vos", "Anotame llamar al plomero"],
+      ["agente", "Dale, lo anoto para el jueves."],
+    ]);
+    // Escribir mientras habla lo interrumpe, igual que hablarle encima.
+    control.escribir("Otra cosa");
+    expect(voz.callado).toBe(1);
+    voz.terminarFrase();
+    await tic(); await tic(); await tic(); await tic();
+    voz.terminarFrase();
+    await tic(); await tic();
+    expect(voz.escuchando).toBe(false); // sigue sin escuchar hasta que se active el micrófono
+    control.silenciar(false);
+    await tic();
+    expect(voz.escuchando).toBe(true);
+  });
+
   it("se puede cambiar de proveedor de voz a mitad de la llamada", async () => {
     const { voz, control, estado } = armar([]);
     await control.empezar(false);

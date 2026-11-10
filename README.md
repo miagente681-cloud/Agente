@@ -9,7 +9,7 @@ Qué hay:
 - **Panel**: áreas, proyectos, tareas y subtareas en cuatro vistas (Hoy / Esta semana, Tablero, Calendario, Ficha de proyecto), con filtro, alta en una línea, paleta de comandos y atajos.
 - **Agente por chat**: actualiza el panel con herramientas; cada cambio se ve como tarjeta y se puede deshacer. Gemini, con Groq de respaldo y un modelo local opcional.
 - **Memoria**: entrevista inicial, aprendizaje al cerrar cada sesión y la pantalla «Lo que sé de vos».
-- **Llamadas de voz**: con Azure Speech o con la voz del navegador, con interrupciones y contador de uso.
+- **Voz**: llamadas del Agente y chat de voz cuando quieras, con Azure Speech o la voz del navegador, con interrupciones y contador de uso. Siempre se puede escribir: el Agente responde hablando.
 - **Llamadas programadas**: rutinas, disponibilidad, notificaciones push y reprogramación automática.
 - **Tus datos**: exportar y borrar todo desde Configuración.
 

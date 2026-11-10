@@ -15,7 +15,8 @@ export class CupoAgotado extends Error {}
 export async function crearVozAzure(p: {
   inicial: TokenAzure;
   pedirToken: () => Promise<RespuestaToken>;
-  microfono: MediaStream;
+  /** null: sin micrófono, solo se usa para hablar. */
+  microfono: MediaStream | null;
   /** Se llama si al renovar el token el servidor dice que se acabó el cupo. */
   alAgotarse: () => void;
 }): Promise<ProveedorVoz> {
@@ -25,7 +26,9 @@ export async function crearVozAzure(p: {
   config.speechRecognitionLanguage = "es-UY";
   config.speechSynthesisVoiceName = p.inicial.voz;
 
-  const reconocedor = new sdk.SpeechRecognizer(config, sdk.AudioConfig.fromStreamInput(p.microfono));
+  const reconocedor = p.microfono
+    ? new sdk.SpeechRecognizer(config, sdk.AudioConfig.fromStreamInput(p.microfono))
+    : null;
   let escuchandoDesde: number | null = null;
   let acumulado = 0;
   let sonando: { destino: InstanceType<typeof sdk.SpeakerAudioDestination>; terminar: () => void } | null = null;
@@ -36,7 +39,7 @@ export async function crearVozAzure(p: {
     if (cerrado) return;
     if (nuevo?.azure) {
       config.authorizationToken = nuevo.token;
-      reconocedor.authorizationToken = nuevo.token;
+      if (reconocedor) reconocedor.authorizationToken = nuevo.token;
     } else if (nuevo && nuevo.motivo === "agotado") {
       p.alAgotarse();
     }
@@ -61,6 +64,10 @@ export async function crearVozAzure(p: {
     id: "azure",
 
     escuchar(alTexto: AlTexto, alError) {
+      if (!reconocedor) {
+        alError("El micrófono no está activado.");
+        return Promise.resolve();
+      }
       reconocedor.recognizing = (_s, e) => {
         if (e.result.text) alTexto(e.result.text, false);
       };
@@ -90,7 +97,7 @@ export async function crearVozAzure(p: {
 
     pausar() {
       return new Promise<void>((listo) => {
-        if (escuchandoDesde === null) return listo();
+        if (escuchandoDesde === null || !reconocedor) return listo();
         cortarCuenta();
         reconocedor.stopContinuousRecognitionAsync(() => listo(), () => listo());
       });
@@ -131,7 +138,7 @@ export async function crearVozAzure(p: {
       clearInterval(renovacion);
       cortarCuenta();
       callar();
-      reconocedor.stopContinuousRecognitionAsync(
+      reconocedor?.stopContinuousRecognitionAsync(
         () => reconocedor.close(),
         () => reconocedor.close(),
       );

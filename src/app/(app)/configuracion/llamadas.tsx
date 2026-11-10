@@ -292,7 +292,7 @@ export function ConfigLlamadas() {
       <Tarjeta>
         <h2 className="rotulo mb-1">Rutinas de llamada</h2>
         <p className="mb-4 text-sm text-texto-2">
-          Las llamadas las inicia el Agente en estos horarios (en tu zona horaria). Para hablar en otro momento está el chat.
+          Las llamadas las inicia el Agente en estos horarios (en tu zona horaria). Para hablar en otro momento, usá «Hablar» en la pantalla del Agente.
         </p>
         {rutinas === null ? (
           <p className="text-sm text-texto-3">Cargando…</p>
