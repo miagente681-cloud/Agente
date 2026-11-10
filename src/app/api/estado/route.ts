@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { NOMBRES_PROVEEDOR, proveedoresEnOrden } from "@/lib/agente/proveedores/indice";
 import { integracionLista } from "@/lib/integraciones";
 import { usuarioActual } from "@/lib/supabase/server";
+import { cuposDe } from "@/lib/voz/cupo";
 
 /** Qué funciones están disponibles en este despliegue. Solo sí o no: nunca valores. */
 export async function GET() {
@@ -19,5 +20,6 @@ export async function GET() {
     cron: integracionLista("cron"),
     servicio: integracionLista("servicio"),
     vapid: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "",
+    cupos: cuposDe(process.env),
   });
 }

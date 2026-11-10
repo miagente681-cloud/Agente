@@ -86,6 +86,19 @@ export function Bienvenida() {
     }
   }
 
+  // La entrevista es la única llamada que empieza la persona; el resto las inicia el Agente.
+  async function entrevistaPorVoz() {
+    setOcupado(true);
+    const { data } = await supabaseBrowser()
+      .from("sessions")
+      .insert({ kind: "onboarding", channel: "voz", status: "en_curso" })
+      .select("id")
+      .single();
+    setOcupado(false);
+    if (!data) return avisar("No se pudo empezar. Probá de nuevo.");
+    router.push(`/llamada/${(data as { id: string }).id}`);
+  }
+
   async function saltar() {
     await supabaseBrowser().from("profiles").update({ onboarding_done: true }).not("user_id", "is", null);
     router.replace("/hoy");
@@ -180,6 +193,9 @@ export function Bienvenida() {
             </p>
           ) : null}
           <div className="flex flex-wrap gap-2">
+            <Boton variante="primario" onClick={entrevistaPorVoz} disabled={ocupado}>
+              Hacerla hablando
+            </Boton>
             <Link
               href="/chat?tipo=onboarding"
               className="inline-flex h-10 items-center rounded-md border border-borde bg-elevado px-4 text-sm font-medium hover:border-borde-fuerte"

@@ -67,6 +67,7 @@ export type EstadoApp = {
   cron: boolean;
   servicio: boolean;
   vapid: string;
+  cupos: { sttSegundos: number; ttsCaracteres: number };
 };
 
 let estadoEnCurso: Promise<EstadoApp | null> | null = null;

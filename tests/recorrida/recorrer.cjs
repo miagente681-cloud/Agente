@@ -37,7 +37,39 @@ const fechaMvd = (dias = 0) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "America/Montevideo" }).format(Date.now() + dias * 86_400_000);
 
 /** Variables que agregan las fases siguientes. */
-const ENTORNO_EXTRA = {};
+const ENTORNO_EXTRA = {
+  // Azure de mentira: solo el emisor de tokens. Con la clave de servicio para el contador.
+  AZURE_SPEECH_KEY: "falsa",
+  AZURE_SPEECH_REGION: "brazilsouth",
+  AZURE_SPEECH_TOKEN_URL: MODELOS,
+  SUPABASE_SERVICE_ROLE_KEY: "servicio-falsa",
+};
+
+/**
+ * Proveedor de voz de mentira que se inyecta en la página: anota lo que el
+ * Agente "dice" y deja simular lo que dice la persona y el volumen del micrófono.
+ */
+function instalarVozDePrueba() {
+  const v = {
+    id: "prueba", dicho: [], escuchando: false, callado: 0, volumen: 0, alTexto: null, soltar: null,
+    async escuchar(al) { v.alTexto = al; v.escuchando = true; },
+    async pausar() { v.escuchando = false; },
+    hablar(texto) {
+      v.dicho.push(texto);
+      // Cada frase "suena" medio segundo, salvo que la callen.
+      return new Promise((listo) => {
+        const reloj = setTimeout(() => { v.soltar = null; listo(); }, v.lento ? 60000 : 500);
+        v.soltar = () => { clearTimeout(reloj); v.soltar = null; listo(); };
+      });
+    },
+    callar() { v.callado++; v.soltar?.(); },
+    cerrar() { v.escuchando = false; v.soltar?.(); },
+    segundosNuevos() { return 12; },
+    nivel() { return v.volumen; },
+    decir(texto) { v.alTexto?.(texto, true); },
+  };
+  window.__vozDePrueba = v;
+}
 
 async function esperarServidor() {
   for (let i = 0; i < 60; i++) {
@@ -421,6 +453,90 @@ async function main() {
     const sistemaNuevo = sistemaDe((await pedidosAlModelo()).at(-1));
     afirmar(sistemaNuevo.includes("Rinde mejor de 7 a 10 de la mañana.") && sistemaNuevo.includes("Compromisos: Salir a correr el sábado"),
       "en la sesión siguiente el modelo recibe las memorias (ya corregidas) y los compromisos anteriores");
+
+    console.log("Llamada de voz (proveedor de voz de mentira)");
+    const token = await pagina.evaluate(() => fetch("/api/voice/token", { method: "POST" }).then((r) => r.json()));
+    afirmar(token.azure === true && token.token === "token-de-mentira" && token.voz === "es-UY-MateoNeural" && !JSON.stringify(token).includes("falsa"),
+      "el servidor entrega un token corto de Azure y nunca la clave");
+    const llamada = await (await sembrar("sessions", { kind: "llamada_programada", channel: "voz", status: "notificada", scheduled_at: new Date().toISOString(), notified_at: new Date().toISOString(), focus: "Repaso breve del día", target_minutes: 5 })).json();
+    e = await estado();
+    const paraLlamada = e.tasks.find((t) => t.title === "Barrer el patio");
+    await guion([
+      { texto: "Hola. La vez pasada quedaste en salir a correr el sábado. ¿Saliste?" },
+      { llamadas: [{ nombre: "actualizar_tarea", argumentos: { tarea_id: corto(paraLlamada.id), fecha_limite: fechaMvd(2) } }] },
+      { texto: "Te dejo lo del patio para pasado mañana. Ahora contame con calma cómo viene todo lo demás, porque quiero repasar tarea por tarea y eso lleva un rato largo de conversación entre los dos." },
+      { texto: "Dale, te escucho." },
+    ]);
+    const conVoz = await contexto.newPage();
+    await conVoz.addInitScript(instalarVozDePrueba);
+    conVoz.on("pageerror", (x) => errores.push("llamada: " + String(x)));
+    await conVoz.goto(`${BASE}/llamada/${llamada.id}`);
+    await conVoz.getByText("Tu Agente te está llamando").waitFor();
+    await conVoz.getByText("Repaso breve del día").waitFor();
+    await conVoz.getByRole("button", { name: "Atender" }).click();
+    await conVoz.getByText("¿Saliste?").waitFor();
+    await conVoz.getByText("Te escucho").waitFor();
+    afirmar((await conVoz.evaluate(() => window.__vozDePrueba.dicho.join(" | "))) === "Hola. La vez pasada quedaste en salir a correr el sábado. | ¿Saliste?",
+      "al atender, el Agente abre la llamada y habla por oraciones");
+    afirmar(sistemaDe((await pedidosAlModelo()).at(-1)).includes("LLAMADA PROGRAMADA") && (await estado()).sessions.find((x) => x.id === llamada.id).status === "en_curso",
+      "la llamada pasa a «en curso» y el modelo recibe el guion de voz con el foco");
+    await captura("16-llamada", conVoz);
+
+    await conVoz.evaluate(() => { window.__vozDePrueba.lento = true; window.__vozDePrueba.decir("Sí, salí. Lo del patio no llegué."); });
+    await conVoz.getByText("«Barrer el patio»: fecha límite →").waitFor();
+    await conVoz.getByText("Hablando").waitFor();
+    afirmar((await estado()).tasks.find((t) => t.id === paraLlamada.id).due_set_by === "agente", "lo que digo en la llamada actualiza el panel (fecha puesta por el Agente)");
+    // Hablar encima: el volumen del micrófono sube y se sostiene.
+    await conVoz.evaluate(() => { window.__vozDePrueba.volumen = 0.4; });
+    await conVoz.getByText("Te escucho").waitFor();
+    const trasInterrumpir = await conVoz.evaluate(() => ({ callado: window.__vozDePrueba.callado, escuchando: window.__vozDePrueba.escuchando, dicho: window.__vozDePrueba.dicho.length }));
+    afirmar(trasInterrumpir.callado >= 1 && trasInterrumpir.escuchando && trasInterrumpir.dicho === 3, "si hablo encima, el Agente corta y vuelve a escuchar");
+    await conVoz.evaluate(() => { window.__vozDePrueba.volumen = 0; window.__vozDePrueba.lento = false; });
+    await conVoz.getByRole("button", { name: "Silenciar" }).click();
+    await conVoz.getByText("Micrófono silenciado").waitFor();
+    await conVoz.evaluate(() => window.__vozDePrueba.decir("esto no se envía"));
+    await conVoz.getByRole("button", { name: "Activar" }).click();
+    await conVoz.evaluate(() => window.__vozDePrueba.decir("Listo, eso es todo."));
+    await conVoz.getByText("Dale, te escucho.").waitFor();
+    afirmar(!(await conVoz.getByText("esto no se envía").count()), "con el micrófono silenciado no se envía nada");
+
+    await guion([{ siSistema: "archiva una sesión", texto: JSON.stringify({
+      resumen: "Repasamos el día y quedó el patio para pasado mañana.",
+      compromisos: [{ texto: "Barrer el patio", fecha: fechaMvd(2) }], memorias: [],
+      bitacora: [{ proyecto_id: corto(proyectoId), texto: "Se movió lo del patio." }],
+    }) }]);
+    await conVoz.getByRole("button", { name: "Cortar" }).click();
+    await conVoz.waitForURL(/\/sesiones\/[0-9a-f-]{36}$/);
+    await conVoz.getByText("Repasamos el día y quedó el patio").waitFor();
+    await conVoz.getByText("«Barrer el patio»: fecha límite →").waitFor();
+    e = await estado();
+    afirmar(e.sessions.find((x) => x.id === llamada.id).status === "completada" && e.project_log.some((x) => x.content === "Se movió lo del patio."),
+      "al cortar veo el resumen, los cambios aplicados y la bitácora actualizada");
+    afirmar(e.voice_usage[0]?.stt_seconds >= 12, "los segundos de escucha se suman al contador del mes");
+
+    // Pasar a texto sin perder el hilo.
+    const otra = await (await sembrar("sessions", { kind: "llamada_programada", channel: "voz", status: "notificada", scheduled_at: new Date().toISOString(), notified_at: new Date().toISOString() })).json();
+    await guion([{ texto: "Hola de nuevo. ¿Cómo venís?" }, { texto: "Seguimos por acá entonces." }]);
+    await conVoz.goto(`${BASE}/llamada/${otra.id}`);
+    await conVoz.getByRole("button", { name: "Atender" }).click();
+    await conVoz.getByText("¿Cómo venís?").waitFor();
+    await conVoz.getByRole("button", { name: "A texto" }).click();
+    await conVoz.waitForURL(/\/chat\?sesion=/);
+    await conVoz.getByText("Hola de nuevo. ¿Cómo venís?").waitFor();
+    await conVoz.getByLabel("Mensaje para el Agente").fill("Sigo por escrito");
+    await conVoz.getByLabel("Mensaje para el Agente").press("Enter");
+    await conVoz.getByText("Seguimos por acá entonces.").waitFor();
+    ok("pasar la llamada a texto conserva la conversación");
+    await fetch(`${FALSO}/__editar`, { method: "POST", body: JSON.stringify({ tabla: "sessions", id: otra.id, cambios: { status: "completada" } }) });
+
+    // Sin cupo de Azure el servidor deja de entregar tokens.
+    await fetch(`${FALSO}/rest/v1/rpc/sumar_uso_voz`, { method: "POST", body: JSON.stringify({ p_user: "11111111-1111-1111-1111-111111111111", p_stt: 18000, p_tts: 0 }) });
+    const sinCupo = await conVoz.evaluate(() => fetch("/api/voice/token", { method: "POST" }).then((r) => r.json()));
+    afirmar(sinCupo.azure === false && sinCupo.motivo === "agotado", "con el cupo agotado el servidor no entrega más tokens de Azure");
+    await conVoz.goto(BASE + "/configuracion");
+    await conVoz.getByText("Cupo agotado").waitFor();
+    ok("la configuración muestra el uso del mes y el aviso de cupo");
+    await conVoz.close();
 
     console.log("Celular (390 px)");
     const movil = await navegador.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
