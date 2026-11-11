@@ -87,7 +87,7 @@ function Notificaciones({ estado }: { estado: EstadoApp | null }) {
           <Link href="/configurar" className="underline">Ver qué falta</Link>
         </p>
       ) : null}
-      {estado && !estado.cron ? (
+      {estado?.detalle && !estado.cron ? (
         <p className="mb-3 text-[13px] text-aviso">
           Falta configurar el programador: sin eso las llamadas no se disparan solas.{" "}
           <Link href="/configurar" className="underline">Ver qué falta</Link>

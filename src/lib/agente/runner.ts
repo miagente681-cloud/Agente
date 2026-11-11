@@ -56,14 +56,47 @@ type FilaMensaje = {
   created_at: string;
 };
 
+/**
+ * Máximo de cada mensaje del historial al armar el pedido. Los mensajes se
+ * pueden escribir desde el navegador (con la sesión de la persona), así que
+ * no se confía en su largo: un pedido no puede crecer sin control.
+ */
+export const MAX_CARACTERES_MENSAJE = 6000;
+const MAX_CARACTERES_RESULTADO = 8000;
+const MAX_CARACTERES_ARGUMENTOS = 4000;
+
+const recortar = (texto: string, max = MAX_CARACTERES_MENSAJE) =>
+  texto.length > max ? `${texto.slice(0, max)}… [recortado]` : texto;
+
+function acotarResultado(resultado: unknown): unknown {
+  const crudo = JSON.stringify(resultado ?? null) ?? "null";
+  return crudo.length > MAX_CARACTERES_RESULTADO ? { recortado: true, texto: crudo.slice(0, MAX_CARACTERES_RESULTADO) } : resultado;
+}
+
+function acotarLlamadas(llamadas: unknown): LlamadaHerramienta[] {
+  if (!Array.isArray(llamadas)) return [];
+  return llamadas.slice(0, 10).map((l: LlamadaHerramienta) => ({
+    ...l,
+    id: String(l?.id ?? "").slice(0, 100),
+    nombre: String(l?.nombre ?? "").slice(0, 100),
+    argumentos: (JSON.stringify(l?.argumentos ?? {}) ?? "").length > MAX_CARACTERES_ARGUMENTOS ? {} : l.argumentos,
+  }));
+}
+
 export function aMensajes(filas: FilaMensaje[]): MensajeLLM[] {
   const salida: MensajeLLM[] = [];
   for (const f of filas) {
-    if (f.role === "usuario" || f.role === "sistema") salida.push({ rol: "usuario", texto: f.content ?? "" });
+    if (f.role === "usuario" || f.role === "sistema") salida.push({ rol: "usuario", texto: recortar(f.content ?? "") });
     else if (f.role === "agente") {
-      salida.push({ rol: "agente", texto: f.content ?? "", ...(f.tool_calls?.length ? { llamadas: f.tool_calls } : {}) });
+      const llamadas = acotarLlamadas(f.tool_calls);
+      salida.push({ rol: "agente", texto: recortar(f.content ?? ""), ...(llamadas.length ? { llamadas } : {}) });
     } else if (f.tool_result) {
-      salida.push({ rol: "herramienta", ...f.tool_result });
+      salida.push({
+        rol: "herramienta",
+        id: String(f.tool_result.id ?? "").slice(0, 100),
+        nombre: String(f.tool_result.nombre ?? "").slice(0, 100),
+        resultado: acotarResultado(f.tool_result.resultado),
+      });
     }
   }
   // El historial tiene que empezar en un turno del usuario: un resultado de
@@ -74,6 +107,12 @@ export function aMensajes(filas: FilaMensaje[]): MensajeLLM[] {
 
 export async function* correrTurno(p: {
   sb: SupabaseClient;
+  /**
+   * Cliente con la clave de servicio, para las columnas de la sesión que la
+   * persona no puede escribir (proveedores usados, foto del contexto). Sin él
+   * no se guardan: la foto se arma igual en cada turno.
+   */
+  admin?: SupabaseClient | null;
   sesion: Sesion;
   proveedores: ProveedorLLM[];
   entrada: { texto?: string; inicio?: boolean };
@@ -150,7 +189,7 @@ export async function* correrTurno(p: {
     !sesion.context_snapshot_at || ahora.getTime() - new Date(sesion.context_snapshot_at).getTime() > VIGENCIA_FOTO_MS;
   if (!sesion.context_snapshot || vencida) {
     const foto = { context_snapshot: armarFoto({ datos, sesion, ahora }), context_snapshot_at: ahora.toISOString() };
-    await sb.from("sessions").update(foto).eq("id", sesion.id);
+    if (p.admin) await p.admin.from("sessions").update(foto).eq("id", sesion.id).eq("user_id", datos.perfil.user_id);
     Object.assign(sesion, foto);
   }
   const voz = Boolean(p.voz);
@@ -289,7 +328,7 @@ export async function* correrTurno(p: {
 
   if (usados.size) {
     const todos = [...new Set([...(sesion.providers_used ?? []), ...usados])];
-    await sb.from("sessions").update({ providers_used: todos }).eq("id", sesion.id);
+    if (p.admin) await p.admin.from("sessions").update({ providers_used: todos }).eq("id", sesion.id).eq("user_id", datos.perfil.user_id);
     sesion.providers_used = todos;
   }
   yield { tipo: "fin", texto: (textoAviso + textoFinal).trim(), proveedor: ultimo };
@@ -318,7 +357,14 @@ const DEJAR_SIN_RESUMIR = 8;
  * enviarse en cada turno. Si el resumen falla no pasa nada: el historial ya
  * está acotado a los últimos mensajes.
  */
-export async function resumirSiHaceFalta(sb: SupabaseClient, sesion: Sesion, proveedores: ProveedorLLM[]) {
+export async function resumirSiHaceFalta(
+  sb: SupabaseClient,
+  sesion: Sesion,
+  proveedores: ProveedorLLM[],
+  admin: SupabaseClient | null,
+) {
+  // El resumen lo escribe solo el servidor: sin la clave de servicio no se hace.
+  if (!admin) return;
   let consulta = sb
     .from("messages")
     .select("role,content,created_at")
@@ -349,5 +395,5 @@ export async function resumirSiHaceFalta(sb: SupabaseClient, sesion: Sesion, pro
     history_summary: resumen.trim().slice(0, 2000),
     history_summary_until: viejos[viejos.length - 1].created_at,
   };
-  await sb.from("sessions").update(cambios).eq("id", sesion.id);
+  await admin.from("sessions").update(cambios).eq("id", sesion.id);
 }

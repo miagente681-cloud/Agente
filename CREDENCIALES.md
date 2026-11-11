@@ -10,6 +10,34 @@ El orden está pensado para que cada paso destrabe algo que se pueda probar.
 
 ---
 
+## 0. Variables nuevas de seguridad (11/11/2026) — cargalas primero
+
+Después de la auditoría de seguridad, **Claude solo responde a los correos de una lista**. Mientras no cargues estas variables, nadie usa Claude: el Agente sigue funcionando con Gemini y Groq, y `/configurar` muestra «Esta página es solo para quien administra la app».
+
+| Variable | Valor | Tipo en Vercel | Qué pasa si falta |
+|---|---|---|---|
+| `CLAUDE_USUARIOS_PERMITIDOS` | Tu correo de la app. Si son varios, separados por coma. Se comparan sin importar mayúsculas. | Plain (no es secreta), *Production* y *Preview* | Nadie usa Claude; responden los gratuitos. `/configurar` y el detalle de integraciones no se muestran a nadie. |
+| `CLAUDE_TOPE_USD_GLOBAL` | `10` (o el monto que quieras) | Plain, *Production* y *Preview* | Vale 10. Es el tope de **todo el despliegue** sumando a todas las personas. El tope de Configuración solo puede bajar el de cada uno. |
+| `NEXT_PUBLIC_REGISTRO_ABIERTO` | No la cargues | — | El ingreso por código no crea cuentas nuevas (lo correcto). |
+
+Después de cargarlas: **Redeploy**. Para comprobar: `/configurar` tiene que mostrar «Quién puede usar Claude: Configurada», y en Configuración → Cerebro del Agente → **Probar conexión** tiene que decir «Anda».
+
+La clave de servicio de Supabase (paso 3) ahora es **obligatoria para que el Agente responda**: con ella se cuentan los límites de uso por persona y se registra el gasto de Claude. Ya está cargada.
+
+### Ajustes de seguridad del panel de Supabase (no se pueden hacer desde el código)
+
+Cualquiera puede hablarle a la API de Supabase sin pasar por la app, así que estos ajustes son la barrera real. Estado comprobado el 11/11/2026 con la API de administración:
+
+| Ajuste | Dónde | Cómo tiene que estar | Estado |
+|---|---|---|---|
+| Registro de usuarios nuevos | Authentication → Sign In / Providers → **Allow new users to sign up** | Apagado | Estaba **encendido** (el cambio a mano no había quedado). Lo apagué desde la API el 11/11/2026; conviene mirar que figure apagado. |
+| Confirmación de correo | Authentication → Sign In / Providers → Email → **Confirm email** | Encendido | Encendido. |
+| Largo mínimo de contraseña | Authentication → Sign In / Providers → Email → **Minimum password length** | 8 o más | 8. |
+| Contraseñas filtradas (HaveIBeenPwned) | Authentication → Sign In / Providers → Email → **Prevent use of leaked passwords** | Encendido si el plan lo permite | No disponible: es solo del plan Pro o superior. En el plan gratuito queda el largo mínimo. |
+| **Max rows** de la API | Project Settings → Data API → **Max rows** | 1000 (el valor por defecto) | 1000. La app ya no depende de este valor para el tope de gasto (lo suma la base), pero un número bajo limita cuánto puede bajar alguien de una sola vez. |
+
+Si en algún momento querés abrir el registro: encendé «Allow new users to sign up» **y** cargá `NEXT_PUBLIC_REGISTRO_ABIERTO=true`. Las dos cosas, o ninguna.
+
 ## 1. Claude (API de Anthropic) — el cerebro principal, con tope de gasto
 
 | | |
@@ -17,7 +45,8 @@ El orden está pensado para que cada paso destrabe algo que se pueda probar.
 | Variable | `ANTHROPIC_API_KEY` |
 | Para qué | Que el Agente responda con Claude: Haiku 5.5 en el chat y las tareas de fondo, Sonnet 5.5 en las llamadas programadas y la entrevista inicial. Sin esta clave, el Agente usa Gemini, Groq u Ollama como hasta ahora. |
 | Dónde se carga | Vercel, en *Production* y *Preview*, tipo **Secret** (sensible). Nunca con `NEXT_PUBLIC_`. |
-| Costo | Es el único proveedor pago. La app corta en **US$ 10 por mes** (se cambia en Configuración) y avisa al 80 %. Además conviene poner un límite en la consola (punto 4 de abajo). |
+| Costo | Es el único proveedor pago. La app corta en **US$ 10 por mes para todo el despliegue** (`CLAUDE_TOPE_USD_GLOBAL`; en Configuración cada persona solo puede bajar el suyo) y avisa al 80 %. Además conviene poner un límite en la consola (punto 4 de abajo). |
+| Requisitos | `CLAUDE_USUARIOS_PERMITIDOS` con tu correo y la clave de servicio de Supabase (paso 0). |
 
 **Paso a paso** (verificado en la documentación oficial el 11/11/2026):
 
@@ -53,7 +82,7 @@ El gasto que muestra la app es una estimación hecha con los precios publicados.
 | | |
 |---|---|
 | Variable | `SUPABASE_SERVICE_ROLE_KEY` |
-| Para qué | Lo que el servidor hace sin tu sesión: programador de llamadas, contador de voz de Azure y borrar la cuenta. |
+| Para qué | Lo que el servidor hace sin tu sesión: registrar el gasto de Claude, contar los límites de uso por persona, programador de llamadas, contador de voz de Azure y borrar la cuenta. **Sin ella el Agente no responde.** |
 | Dónde se consigue | Misma pantalla → **Secret key** (`sb_secret_…`). |
 | Dónde se carga | Vercel, marcada como **Sensitive**. Nunca con `NEXT_PUBLIC_`. |
 | Destraba | Pasos 7, 8 y 9. |

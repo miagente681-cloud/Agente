@@ -199,8 +199,8 @@ describe("el programador, minuto a minuto", () => {
     servidor.reiniciar();
     enviados = [];
     servidor.sembrar("call_routines", { name: "Repaso matutino", weekdays: [2], local_time: "09:00:00", target_minutes: 10, focus: "Repaso breve del día" });
-    servidor.sembrar("push_subscriptions", { endpoint: "https://push.ejemplo/celular", p256dh: "p", auth: "a" });
-    servidor.sembrar("push_subscriptions", { endpoint: "https://push.ejemplo/vencida", p256dh: "p", auth: "a" });
+    servidor.sembrar("push_subscriptions", { endpoint: "https://fcm.googleapis.com/fcm/send/celular", p256dh: "p", auth: "a" });
+    servidor.sembrar("push_subscriptions", { endpoint: "https://fcm.googleapis.com/fcm/send/vencida", p256dh: "p", auth: "a" });
   });
 
   it("crea la llamada, avisa a la hora, reprograma dos veces y al final la da por perdida", async () => {
@@ -216,11 +216,11 @@ describe("el programador, minuto a minuto", () => {
     expect(await tick("2026-11-10T12:00:20Z")).toMatchObject({ notificadas: 1, avisos: 1 });
     expect(sesiones()[0]).toMatchObject({ status: "notificada", notified_at: "2026-11-10T12:00:20.000Z" });
     expect(enviados[0]).toEqual({
-      endpoint: "https://push.ejemplo/celular",
+      endpoint: "https://fcm.googleapis.com/fcm/send/celular",
       carga: { titulo: "Tu Agente te está llamando", cuerpo: "Repaso breve del día", url: `/llamada/${primera}`, etiqueta: `llamada-${primera}`, persistente: true },
     });
     // La suscripción que el navegador dio de baja se borra sola.
-    expect(servidor.estado().push_subscriptions.map((s) => s.endpoint)).toEqual(["https://push.ejemplo/celular"]);
+    expect(servidor.estado().push_subscriptions.map((s) => s.endpoint)).toEqual(["https://fcm.googleapis.com/fcm/send/celular"]);
 
     expect(await tick("2026-11-10T12:05:00Z")).toMatchObject({ reprogramadas: 0, notificadas: 0 });
     expect(await tick("2026-11-10T12:10:30Z")).toMatchObject({ reprogramadas: 1 });
@@ -269,5 +269,27 @@ describe("el programador, minuto a minuto", () => {
     expect(sesiones()[1].scheduled_at).toBe("2026-11-10T21:00:00.000Z"); // 18:00 local, su única ventana
     await tick("2026-11-10T21:00:00Z");
     expect(await tick("2026-11-10T21:20:00Z")).toMatchObject({ perdidas: 1 });
+  });
+
+  it("no manda a destinos que no son servicios de push, y una corrida no se demora por un destino lento", async () => {
+    // Una fila vieja (anterior a la restricción de la base) con un destino cualquiera.
+    servidor.sembrar("push_subscriptions", { endpoint: "http://169.254.169.254/latest/meta-data", p256dh: "p", auth: "a" });
+    servidor.sembrar("push_subscriptions", { endpoint: "https://evil.example.com/x", p256dh: "p", auth: "a" });
+    await tick("2026-11-10T11:00:00Z");
+    expect(await tick("2026-11-10T12:00:20Z")).toMatchObject({ notificadas: 1, avisos: 1 });
+    expect(enviados.map((e) => e.endpoint)).toEqual(["https://fcm.googleapis.com/fcm/send/celular"]);
+
+    // Con el tiempo de envíos de la corrida agotado, lo que falta se descarta y el programador sigue.
+    let ahora = 0;
+    const lento: EnviarPush = async (s, carga) => {
+      ahora += 30_000; // cada envío "tarda" 30 s
+      enviados.push({ endpoint: s.endpoint, carga });
+      return "ok";
+    };
+    servidor.sembrar("push_subscriptions", { endpoint: "https://updates.push.services.mozilla.com/wpush/v2/otro", p256dh: "p", auth: "a" });
+    const r = await correrTick({ admin, ahora: z("2026-11-10T12:10:30Z"), enviar: lento, tiempoEnviosMs: 20_000, reloj: () => ahora });
+    expect(r).toMatchObject({ reprogramadas: 1 });
+    expect(r.avisos + r.postergados).toBe(2);
+    expect(r.postergados).toBeGreaterThanOrEqual(1);
   });
 });

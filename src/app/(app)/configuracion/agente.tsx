@@ -63,7 +63,7 @@ export function ConfigAgente() {
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
                   {p.nombre}
-                  {estado ? (
+                  {estado?.detalle ? (
                     <Etiqueta tono={listo ? "ok" : "neutro"}>{listo ? "Configurado" : "Falta configurar"}</Etiqueta>
                   ) : null}
                 </p>

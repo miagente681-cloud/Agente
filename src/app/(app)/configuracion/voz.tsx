@@ -6,7 +6,6 @@ import { Etiqueta, Tarjeta } from "@/components/ui/varios";
 import { estadoApp, type EstadoApp } from "@/lib/agente/cliente";
 import { useDatos } from "@/lib/datos/almacen";
 import { usePerfil } from "@/lib/datos/perfil";
-import { supabaseBrowser } from "@/lib/supabase/client";
 import { evaluarCupo } from "@/lib/voz/cupo";
 import { VOCES, VOZ_POR_DEFECTO } from "@/lib/voz/tipos";
 
@@ -29,27 +28,19 @@ export function ConfigVoz() {
   const { avisar } = useDatos();
   const { perfil, guardarConfig } = usePerfil();
   const [estado, setEstado] = useState<EstadoApp | null>(null);
-  const [uso, setUso] = useState<{ stt_seconds: number; tts_chars: number } | null>(null);
 
   useEffect(() => {
     let vigente = true;
-    (async () => {
-      const mes = new Date().toISOString().slice(0, 7) + "-01";
-      const [e, u] = await Promise.all([
-        estadoApp(),
-        supabaseBrowser().from("voice_usage").select("stt_seconds,tts_chars").eq("month", mes).maybeSingle(),
-      ]);
-      if (!vigente) return;
-      setEstado(e);
-      setUso(u.data as { stt_seconds: number; tts_chars: number } | null);
-    })();
+    void estadoApp().then((e) => vigente && setEstado(e));
     return () => {
       vigente = false;
     };
   }, []);
 
   const voz = typeof perfil?.agent_config.voz === "string" ? perfil.agent_config.voz : VOZ_POR_DEFECTO;
-  const cupo = estado ? evaluarCupo(uso, estado.cupos) : null;
+  // El cupo es uno solo para todo el despliegue: solo lo ve quien lo administra.
+  const uso = estado?.usoVoz ?? null;
+  const cupo = estado?.cupos ? evaluarCupo(uso, estado.cupos) : null;
 
   return (
     <Tarjeta>
@@ -79,15 +70,15 @@ export function ConfigVoz() {
             ))}
           </Selector>
         </Campo>
-        {estado?.azure && cupo ? (
+        {estado?.azure && cupo && estado.cupos ? (
           <div className="flex flex-col gap-3">
             <Barra
-              etiqueta="Escucha este mes"
+              etiqueta="Escucha este mes (todo el despliegue)"
               detalle={`${Math.round((uso?.stt_seconds ?? 0) / 60)} de ${Math.round(estado.cupos.sttSegundos / 60)} min`}
               porcentaje={cupo.stt}
             />
             <Barra
-              etiqueta="Voz este mes"
+              etiqueta="Voz este mes (todo el despliegue)"
               detalle={`${(uso?.tts_chars ?? 0).toLocaleString("es-UY")} de ${estado.cupos.ttsCaracteres.toLocaleString("es-UY")} caracteres`}
               porcentaje={cupo.tts}
             />

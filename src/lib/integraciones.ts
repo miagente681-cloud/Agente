@@ -30,7 +30,7 @@ export function integraciones(): Integracion[] {
       id: "servicio",
       nombre: "Supabase, clave de servicio",
       configurada: tiene("SUPABASE_SERVICE_ROLE_KEY"),
-      paraQue: "Llamadas programadas, contador de voz de Azure y borrado de la cuenta.",
+      paraQue: "Registro del gasto de Claude, límites de uso por persona, llamadas programadas, contador de voz de Azure y borrado de la cuenta. Sin esto el Agente no responde.",
       variables: ["SUPABASE_SERVICE_ROLE_KEY"],
     },
     {
@@ -38,8 +38,16 @@ export function integraciones(): Integracion[] {
       nombre: "Claude (cerebro principal, pago con tope)",
       configurada: tiene("ANTHROPIC_API_KEY"),
       paraQue: "Chat y llamadas con Claude, con un tope de gasto mensual. Sin esto el Agente usa los modelos gratuitos.",
-      variables: ["ANTHROPIC_API_KEY"],
+      variables: ["ANTHROPIC_API_KEY", "CLAUDE_TOPE_USD_GLOBAL"],
       opcional: true,
+    },
+    {
+      id: "claude_permitidos",
+      nombre: "Quién puede usar Claude",
+      configurada: tiene("CLAUDE_USUARIOS_PERMITIDOS"),
+      paraQue:
+        "Correos (separados por coma) que pueden usar Claude y ver esta página. Vacía: nadie usa Claude y el Agente sigue con los modelos gratuitos.",
+      variables: ["CLAUDE_USUARIOS_PERMITIDOS"],
     },
     {
       id: "gemini",

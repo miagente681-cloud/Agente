@@ -3,6 +3,8 @@ import Link from "next/link";
 import { Check, CircleDashed, Minus } from "lucide-react";
 import { supabaseConfigurado } from "@/lib/env";
 import { integraciones } from "@/lib/integraciones";
+import { esAdministrador } from "@/lib/seguridad/permitidos";
+import { usuarioActual } from "@/lib/supabase/server";
 
 export const metadata: Metadata = { title: "Integraciones" };
 // Lee las variables de entorno en cada pedido, no al compilar.
@@ -12,7 +14,19 @@ export const dynamic = "force-dynamic";
  * Qué integraciones tiene cargadas este despliegue. Muestra solo si cada
  * variable está o no: los valores nunca se leen para mostrarse.
  */
-export default function Configurar() {
+export default async function Configurar() {
+  // Con la base conectada, el detalle es solo para quien administra el despliegue.
+  if (supabaseConfigurado && !esAdministrador((await usuarioActual())?.email)) {
+    return (
+      <main className="mx-auto flex min-h-dvh max-w-xl flex-col gap-5 px-5 py-10">
+        <h1 className="titulo-pagina">Estado de las integraciones</h1>
+        <p className="text-sm text-texto-2">Esta página es solo para quien administra la app.</p>
+        <Link href="/hoy" className="self-start rounded-sm text-sm font-medium text-acento hover:text-acento-fuerte">
+          Volver a la app
+        </Link>
+      </main>
+    );
+  }
   const lista = integraciones();
   const pendientes = lista.filter((i) => i.configurada === false && !i.opcional).length;
   return (

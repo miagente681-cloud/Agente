@@ -35,6 +35,9 @@ async function main() {
       NEXT_PUBLIC_SUPABASE_URL: FALSO,
       NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "clave-falsa",
       ANTHROPIC_API_KEY: "clave-de-mentira",
+      // Claude necesita la clave de servicio (el gasto lo escribe solo el servidor) y un correo permitido.
+      SUPABASE_SERVICE_ROLE_KEY: "servicio-falsa",
+      CLAUDE_USUARIOS_PERMITIDOS: "prueba@ejemplo.com",
       ANTHROPIC_BASE_URL: MODELOS,
       GEMINI_API_KEY: "falsa",
       GEMINI_BASE_URL: MODELOS,
@@ -127,14 +130,16 @@ async function main() {
     await pagina.getByText("Sigo.").waitFor();
     afirmar((await pagina.getByText(/Ya usaste el 80 %/).count()) === 1, "el aviso del 80 % sale una sola vez");
 
-    // Llega al tope: esta sesión sigue con Claude; la próxima pasa al gratuito y lo dice una vez.
+    // Llega al tope (gastado = 110 % del tope): esta sesión sigue con Claude
+    // (hasta un 20 % por encima); la próxima pasa al gratuito y lo dice una vez.
     e = await estado();
-    await editar("profiles", null, { agent_config: { ...e.profiles[0].agent_config, claude_tope_usd: 0.000001 } });
+    const gastadoAhora = e.llm_usage.reduce((t, u) => t + Number(u.cost_usd), 0);
+    await editar("profiles", null, { agent_config: { ...e.profiles[0].agent_config, claude_tope_usd: gastadoAhora / 1.1 } });
     await guion([{ proveedor: "claude", texto: "Termino esta con Claude." }]);
     await mensaje.fill("Una más");
     await mensaje.press("Enter");
     await pagina.getByText("Termino esta con Claude.").waitFor();
-    afirmar(true, "si se llega al tope en medio de una sesión, esa sesión se termina con Claude");
+    afirmar(true, "si se llega al tope en medio de una sesión, esa sesión se termina con Claude (hasta un 20 % por encima)");
     await pagina.getByRole("button", { name: "Terminar" }).click();
     await pagina.waitForURL(/\/sesiones\//);
     const antes = (await pedidosClaude()).length;

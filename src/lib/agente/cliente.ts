@@ -30,8 +30,14 @@ export async function* pedirTurno(pedido: PedidoTurno, senal?: AbortSignal): Asy
     return;
   }
   if (!respuesta.ok || !respuesta.body) {
-    const mensaje =
-      respuesta.status === 409
+    // 429 (límite de frecuencia) y 503 (falta configurar algo): el servidor manda un mensaje claro.
+    const delServidor =
+      respuesta.status === 429 || respuesta.status === 503
+        ? ((await respuesta.json().catch(() => null)) as { error?: string } | null)?.error
+        : undefined;
+    const mensaje = delServidor
+      ? delServidor
+      : respuesta.status === 409
         ? "Esta sesión ya terminó. Empezá una nueva."
         : respuesta.status === 401
           ? "Se venció tu sesión. Volvé a ingresar."
@@ -60,6 +66,8 @@ export async function* pedirTurno(pedido: PedidoTurno, senal?: AbortSignal): Asy
 }
 
 export type EstadoApp = {
+  /** Si viene el detalle de las integraciones (solo para quien administra el despliegue). */
+  detalle: boolean;
   agente: boolean;
   claude: boolean;
   proveedores: { id: string; nombre: string; modelo: string }[];
@@ -68,7 +76,9 @@ export type EstadoApp = {
   cron: boolean;
   servicio: boolean;
   vapid: string;
-  cupos: { sttSegundos: number; ttsCaracteres: number };
+  cupos?: { sttSegundos: number; ttsCaracteres: number };
+  /** Uso de Azure del mes, sumando a todo el despliegue. */
+  usoVoz?: { stt_seconds: number; tts_chars: number } | null;
 };
 
 let estadoEnCurso: Promise<EstadoApp | null> | null = null;

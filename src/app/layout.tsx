@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { connection } from "next/server";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { RegistrarServiceWorker } from "@/components/registrar-sw";
@@ -27,7 +28,10 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  // Todas las páginas se arman en cada pedido: la política de contenido lleva
+  // un nonce nuevo cada vez y Next se lo pone a sus scripts al renderizar.
+  await connection();
   return (
     <html lang="es-UY" className={`${GeistSans.variable} ${GeistMono.variable} h-full`}>
       <body className="min-h-full">

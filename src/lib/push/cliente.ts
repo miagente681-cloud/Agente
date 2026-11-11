@@ -1,6 +1,7 @@
 "use client";
 
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { destinoPushValido } from "./destinos";
 
 /** Notificaciones push, lado del navegador. */
 
@@ -70,6 +71,10 @@ export async function activarPush(clavePublica: string): Promise<{ ok: boolean; 
       (await registro.pushManager.getSubscription()) ??
       (await registro.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: claveABytes(clavePublica) }));
     const datos = suscripcion.toJSON();
+    if (!destinoPushValido(datos.endpoint)) {
+      await suscripcion.unsubscribe().catch(() => null);
+      return { ok: false, mensaje: "Este navegador usa un servicio de notificaciones que la app no reconoce." };
+    }
     const { error } = await supabaseBrowser()
       .from("push_subscriptions")
       .upsert(

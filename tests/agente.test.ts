@@ -390,7 +390,7 @@ describe("al terminar una sesión", () => {
       });
     }
     const liviano = proveedorFalso("gemini-h", [{ texto: "Hablaron del baño y quedó pendiente el plomero." }]);
-    await resumirSiHaceFalta(sb, sesion, [liviano]);
+    await resumirSiHaceFalta(sb, sesion, [liviano], sb);
     const guardada = tabla("sessions")[0];
     expect(guardada.history_summary).toBe("Hablaron del baño y quedó pendiente el plomero.");
     expect(guardada.history_summary_until).toBe(new Date(AHORA.getTime() + 21_000).toISOString());

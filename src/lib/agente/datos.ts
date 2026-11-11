@@ -24,6 +24,7 @@ export type Rutina = {
 
 export type Sesion = {
   id: string;
+  user_id?: string;
   kind: "onboarding" | "llamada_programada" | "chat";
   channel: "voz" | "texto";
   status: string;

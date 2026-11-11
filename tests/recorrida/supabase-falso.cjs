@@ -31,6 +31,7 @@ function cookieDeSesion() {
 const TABLAS = [
   "profiles", "areas", "projects", "tasks", "call_routines", "availability_windows", "sessions",
   "messages", "project_log", "memories", "change_log", "push_subscriptions", "voice_usage", "llm_usage",
+  "limites_frecuencia",
 ];
 
 /** Una sesión de Supabase Auth como la devuelve el servidor real. */
@@ -43,6 +44,8 @@ function crearServidor() {
   const ahora = () => new Date().toISOString();
   // Contraseña de la cuenta de prueba: no tiene hasta que se pone en Configuración.
   let contrasena = null;
+  // Para la recorrida: un endpoint que se fuerza a responder «límite alcanzado».
+  const limitesForzados = new Set();
   let tablas;
   const reiniciar = () => {
     tablas = Object.fromEntries(TABLAS.map((t) => [t, []]));
@@ -152,6 +155,20 @@ function crearServidor() {
           if (token !== "123456") return enviar(403, { code: 403, error_code: "otp_expired", msg: "Token has expired or is invalid" });
           return enviar(200, sesionFalsa());
         }
+        if (url.pathname === "/__forzar_limite") {
+          const { clave, activo } = JSON.parse(crudo);
+          if (activo) limitesForzados.add(clave);
+          else limitesForzados.delete(clave);
+          return enviar(200, {});
+        }
+        // Ingreso por código: con create_user en false, un correo sin cuenta no entra (como Supabase).
+        if (url.pathname === "/auth/v1/otp") {
+          const { email, create_user } = JSON.parse(crudo || "{}");
+          if (create_user === false && email !== USUARIO.email) {
+            return enviar(422, { code: 422, error_code: "otp_disabled", msg: "Signups not allowed for otp" });
+          }
+          return enviar(200, {});
+        }
         if (url.pathname === "/__contrasena") return enviar(200, { tiene: contrasena !== null });
         if (url.pathname.startsWith("/auth/v1/admin/users/")) {
           reiniciar(); // Borrar el usuario se lleva todo, como el "on delete cascade".
@@ -180,6 +197,43 @@ function crearServidor() {
           fila.stt_seconds += Math.max(p_stt, 0);
           fila.tts_chars += Math.max(p_tts, 0);
           return enviar(200, [{ stt_seconds: fila.stt_seconds, tts_chars: fila.tts_chars }]);
+        }
+
+        // Las funciones de la migración 0005 (en la base real, solo para la clave de servicio).
+        if (url.pathname === "/rest/v1/rpc/gasto_claude_mes") {
+          const { p_user, p_mes } = JSON.parse(crudo);
+          const delMes = tablas.llm_usage.filter((f) => f.mes === p_mes);
+          const suma = (filas) => filas.reduce((t, f) => t + Number(f.cost_usd), 0);
+          return enviar(200, [{ propio: suma(delMes.filter((f) => f.user_id === p_user)), global: suma(delMes) }]);
+        }
+        if (url.pathname === "/rest/v1/rpc/gasto_claude_desglose") {
+          const { p_user, p_mes } = JSON.parse(crudo);
+          const totales = new Map();
+          for (const f of tablas.llm_usage.filter((x) => x.user_id === p_user && x.mes === p_mes)) {
+            const clave = `${f.uso}|${f.model}`;
+            totales.set(clave, (totales.get(clave) ?? 0) + Number(f.cost_usd));
+          }
+          return enviar(200, [...totales].map(([k, total]) => ({ uso: k.split("|")[0], model: k.split("|")[1], total })));
+        }
+        if (url.pathname === "/rest/v1/rpc/consumir_limite") {
+          const { p_user, p_clave, p_por_minuto, p_por_dia } = JSON.parse(crudo);
+          const minuto = new Date().toISOString().slice(0, 16);
+          const dia = minuto.slice(0, 10);
+          let f = tablas.limites_frecuencia.find((x) => x.user_id === p_user && x.clave === p_clave);
+          if (!f) tablas.limites_frecuencia.push((f = { user_id: p_user, clave: p_clave, minuto, en_minuto: 0, dia, en_dia: 0 }));
+          if (limitesForzados.has(p_clave)) return enviar(200, [{ permitido: false, en_minuto: 999, en_dia: 1 }]);
+          f.en_minuto = f.minuto === minuto ? f.en_minuto + 1 : 1;
+          f.en_dia = f.dia === dia ? f.en_dia + 1 : 1;
+          Object.assign(f, { minuto, dia });
+          return enviar(200, [{ permitido: f.en_minuto <= p_por_minuto && f.en_dia <= p_por_dia, en_minuto: f.en_minuto, en_dia: f.en_dia }]);
+        }
+        if (url.pathname === "/rest/v1/rpc/uso_voz_global") {
+          const { p_month } = JSON.parse(crudo);
+          const delMes = tablas.voice_usage.filter((f) => f.month === p_month);
+          return enviar(200, [{
+            stt_seconds: delMes.reduce((t, f) => t + f.stt_seconds, 0),
+            tts_chars: delMes.reduce((t, f) => t + f.tts_chars, 0),
+          }]);
         }
 
         const tabla = url.pathname.replace("/rest/v1/", "");

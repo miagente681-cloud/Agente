@@ -6,7 +6,19 @@ import { Boton } from "@/components/ui/boton";
 import { Campo, Entrada } from "@/components/ui/campo";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
+/**
+ * Registro cerrado por defecto: el código solo sirve para cuentas que ya
+ * existen. Se abre con NEXT_PUBLIC_REGISTRO_ABIERTO=true. Igual, la barrera
+ * real es el ajuste «Allow new users to sign up» de Supabase (ver CREDENCIALES.md):
+ * cualquiera puede llamar a la API de Supabase sin pasar por esta pantalla.
+ */
+const REGISTRO_ABIERTO = process.env.NEXT_PUBLIC_REGISTRO_ABIERTO === "true";
+
+const SIN_CUENTA = "Ese correo no tiene una cuenta en MiAgente. Si te tendrían que haber dado acceso, pedíselo a quien administra la app.";
+
 function mensajeDeError(codigo: string | undefined, status: number | undefined): string {
+  // Con el registro cerrado, Supabase responde así a un correo sin cuenta.
+  if (codigo === "otp_disabled" || codigo === "signup_disabled" || codigo === "user_not_found") return SIN_CUENTA;
   if (status === 429 || codigo === "over_email_send_rate_limit" || codigo === "over_request_rate_limit") {
     return "Hubo demasiados intentos. Esperá unos minutos y probá de nuevo.";
   }
@@ -24,8 +36,8 @@ function mensajeDeError(codigo: string | undefined, status: number | undefined):
 type Modo = "contrasena" | "codigo" | "verificar";
 
 /**
- * Ingreso con contraseña (lo habitual) o con un código por correo (la primera
- * vez, o si te olvidaste la contraseña). La contraseña se pone en Configuración.
+ * Ingreso con contraseña (lo habitual) o con un código por correo (si todavía
+ * no tenés contraseña, o te la olvidaste). La contraseña se pone en Configuración.
  */
 export function FormularioIngreso() {
   const router = useRouter();
@@ -67,7 +79,7 @@ export function FormularioIngreso() {
     setError(null);
     const { error } = await supabaseBrowser().auth.signInWithOtp({
       email: correo.trim(),
-      options: { emailRedirectTo: `${window.location.origin}/auth/confirmar` },
+      options: { emailRedirectTo: `${window.location.origin}/auth/confirmar`, shouldCreateUser: REGISTRO_ABIERTO },
     });
     setCargando(false);
     if (error) return setError(mensajeDeError(error.code, error.status));
@@ -122,7 +134,7 @@ export function FormularioIngreso() {
           {cargando ? "Entrando…" : "Entrar"}
         </Boton>
         <p className="text-center text-[13px] text-texto-2">
-          ¿Primera vez, o te olvidaste la contraseña?{" "}
+          {REGISTRO_ABIERTO ? "¿Primera vez, o te olvidaste la contraseña?" : "¿Todavía no tenés contraseña, o te la olvidaste?"}{" "}
           <button type="button" onClick={() => cambiar("codigo")} className="rounded-sm font-medium text-acento hover:text-acento-fuerte">
             Entrar con un código
           </button>
@@ -144,8 +156,11 @@ export function FormularioIngreso() {
           {cargando ? "Enviando…" : "Enviarme el acceso"}
         </Boton>
         <p className="text-[13px] text-texto-3">
-          Te llega un correo con un enlace y un código. Si es tu primera vez, se crea tu cuenta. Una vez adentro,
-          ponete una contraseña en Configuración y la próxima entrás directo.
+          Te llega un correo con un enlace y un código.{" "}
+          {REGISTRO_ABIERTO
+            ? "Si es tu primera vez, se crea tu cuenta."
+            : "Solo funciona con una cuenta que ya exista: el registro de cuentas nuevas está cerrado."}{" "}
+          Una vez adentro, ponete una contraseña en Configuración y la próxima entrás directo.
         </p>
         <Boton variante="fantasma" onClick={() => cambiar("contrasena")}>
           Entrar con contraseña

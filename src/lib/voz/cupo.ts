@@ -27,3 +27,17 @@ export function evaluarCupo(uso: { stt_seconds: number; tts_chars: number } | nu
     tts: Math.min(100, Math.round(tts * 100)),
   };
 }
+
+/**
+ * Lo que descuenta cada token de Azure al entregarse, se informe o no el uso
+ * después: el navegador podría no informarlo. Un token dura 10 minutos.
+ */
+export const MINIMO_POR_TOKEN = { sttSegundos: 60, ttsCaracteres: 1500 };
+
+export function minimoPorTokenDe(env: Record<string, string | undefined>) {
+  const numero = (v: string | undefined, defecto: number) => (v !== undefined && v.trim() !== "" && Number(v) >= 0 ? Number(v) : defecto);
+  return {
+    sttSegundos: numero(env.AZURE_MINIMO_STT_POR_TOKEN, MINIMO_POR_TOKEN.sttSegundos),
+    ttsCaracteres: numero(env.AZURE_MINIMO_TTS_POR_TOKEN, MINIMO_POR_TOKEN.ttsCaracteres),
+  };
+}

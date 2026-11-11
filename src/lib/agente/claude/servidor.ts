@@ -4,8 +4,19 @@ import { hayClaveClaude, proveedoresEnOrden, type OpcionesClaude } from "../prov
 import type { ProveedorLLM } from "../tipos";
 import { emisorPush } from "@/lib/push/servidor";
 import type { Suscripcion } from "@/lib/programacion/tick";
-import { configClaude } from "./config";
-import { evaluarPresupuesto, formatoUSD, gastoDelMes, mesDe, registrarUso, type EstadoPresupuesto } from "./presupuesto";
+import { puedeUsarClaude } from "@/lib/seguridad/permitidos";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+import { destinoPushValido } from "@/lib/push/destinos";
+import { configClaude, topeGlobalDe } from "./config";
+import {
+  evaluarPresupuesto,
+  formatoUSD,
+  gastoDelMes,
+  mesDe,
+  registrarUso,
+  sesionUsoClaude,
+  type EstadoPresupuesto,
+} from "./presupuesto";
 
 export const AVISO_TOPE = "Este mes ya usé todo el presupuesto de Claude; sigo con el modelo gratuito.";
 
@@ -18,38 +29,68 @@ async function guardarConfig(sb: SupabaseClient, perfil: Perfil, cambios: Record
   await sb.from("profiles").update({ agent_config: { ...actual, ...cambios } }).eq("user_id", perfil.user_id);
 }
 
+export type UsuarioVerificado = { id: string; email?: string | null };
+
 /**
- * Arma la lista de proveedores para una sesión: decide si Claude entra (clave,
- * problemas recientes, tope del mes) y le conecta el registro de gasto, el
- * aviso del 80 % y la marca de problemas con la clave o el crédito.
+ * Arma la lista de proveedores para una sesión. Claude entra solo si:
+ * hay clave de Anthropic, hay clave de servicio de Supabase (el gasto lo
+ * escribe y lo suma solo el servidor), el correo verificado de la persona está
+ * en CLAUDE_USUARIOS_PERMITIDOS, no hubo un problema reciente con la clave o
+ * el crédito, y no se llegó a su tope ni al global del despliegue.
+ *
+ * Nada de eso sale de datos que la persona pueda escribir desde el navegador:
+ * el tope del perfil solo puede bajar el límite, y «la sesión ya usó Claude»
+ * se mira en el registro de gasto, no en la sesión.
  */
 export async function prepararProveedores(
   sb: SupabaseClient,
-  p: { sesionId: string | null; sesionYaUsoClaude: boolean; ahora?: Date },
+  p: {
+    usuario: UsuarioVerificado;
+    sesionId: string | null;
+    ahora?: Date;
+    /** Cliente con la clave de servicio; por defecto, el del entorno. */
+    admin?: SupabaseClient | null;
+  },
 ): Promise<{ proveedores: ProveedorLLM[]; avisoTope: string | null; presupuesto: EstadoPresupuesto | null }> {
   const ahora = p.ahora ?? new Date();
-  const { data } = await sb.from("profiles").select("user_id,timezone,agent_config").maybeSingle();
+  const admin = p.admin === undefined ? supabaseAdmin() : p.admin;
+  const { data } = await sb.from("profiles").select("user_id,timezone,agent_config").eq("user_id", p.usuario.id).maybeSingle();
   const perfil = data as Perfil | null;
   const agentConfig = perfil?.agent_config ?? {};
-  if (!perfil || !hayClaveClaude()) {
+  if (!perfil || !admin || !hayClaveClaude() || !puedeUsarClaude(p.usuario.email)) {
     return { proveedores: proveedoresEnOrden(agentConfig.orden_proveedores), avisoTope: null, presupuesto: null };
   }
 
   const mes = mesDe(ahora, perfil.timezone);
+  const topeGlobal = topeGlobalDe();
+  const [gasto, yaUso] = await Promise.all([
+    gastoDelMes(admin, p.usuario.id, mes),
+    sesionUsoClaude(admin, p.usuario.id, p.sesionId),
+  ]);
   const presupuesto = evaluarPresupuesto({
     hayClave: true,
     agentConfig,
-    gastoMes: await gastoDelMes(sb, mes),
+    gastoMes: gasto.propio,
+    gastoGlobal: gasto.global,
+    topeGlobal,
     mes,
     ahora,
-    sesionYaUsoClaude: p.sesionYaUsoClaude,
+    sesionYaUsoClaude: yaUso,
   });
   if (presupuesto.avisarTope) await guardarConfig(sb, perfil, { claude_tope_avisado: mes });
 
   const opciones: OpcionesClaude = {
-    modelos: configClaude(agentConfig).modelos,
+    modelos: configClaude(agentConfig, topeGlobal).modelos,
     async alUsar({ modelo, uso, tokens }) {
-      const r = await registrarUso(sb, { sesionId: p.sesionId, modelo, uso, tokens, zona: perfil.timezone });
+      const r = await registrarUso(admin, {
+        userId: p.usuario.id,
+        sesionId: p.sesionId,
+        modelo,
+        uso,
+        tokens,
+        zona: perfil.timezone,
+        topeGlobal,
+      });
       // Registro en el servidor para comprobar que el caché funciona (sin datos de la persona).
       console.info(
         `[claude] ${modelo} ${uso}: entrada ${tokens.entrada}, caché escrita ${tokens.cache5m + tokens.cache1h}, caché leída ${tokens.lectura}, salida ${tokens.salida}, ${formatoUSD(r.costo)}`,
@@ -74,7 +115,7 @@ async function avisarPorPush(sb: SupabaseClient, cuerpo: string) {
   const enviar = emisorPush();
   if (!enviar) return; // Sin claves de push el aviso queda solo dentro de la app.
   const { data } = await sb.from("push_subscriptions").select("endpoint,p256dh,auth");
-  for (const s of (data ?? []) as Suscripcion[]) {
+  for (const s of ((data ?? []) as Suscripcion[]).filter((x) => destinoPushValido(x.endpoint))) {
     await enviar(s, { titulo: "Presupuesto de Claude", cuerpo, url: "/configuracion", etiqueta: "claude-80" }).catch(() => null);
   }
 }

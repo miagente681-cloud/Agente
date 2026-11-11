@@ -44,6 +44,7 @@ const ENTORNO_EXTRA = {
   AZURE_SPEECH_TOKEN_URL: MODELOS,
   SUPABASE_SERVICE_ROLE_KEY: "servicio-falsa",
   CRON_SECRET: "secreto-de-prueba",
+  CLAUDE_USUARIOS_PERMITIDOS: "prueba@ejemplo.com",
 };
 const tick = (secreto) =>
   fetch(`${BASE}/api/cron/tick`, { method: "POST", headers: secreto ? { Authorization: `Bearer ${secreto}` } : {} });
@@ -665,6 +666,12 @@ async function main() {
     afirmar(true, "sin contraseña puesta, el ingreso con contraseña explica que hay que entrar con un código");
     await pi.screenshot({ path: path.join(capturas, "26-ingreso-contrasena.png") });
     await pi.getByRole("button", { name: "Entrar con un código" }).click();
+    await pi.getByText("el registro de cuentas nuevas está cerrado").waitFor();
+    await pi.getByLabel("Correo").fill("alguien-nuevo@ejemplo.com");
+    await pi.getByRole("button", { name: "Enviarme el acceso" }).click();
+    await pi.getByText(/Ese correo no tiene una cuenta en MiAgente/).waitFor();
+    afirmar(true, "con el registro cerrado, un correo sin cuenta recibe un mensaje claro y no se crea nada");
+    await pi.getByLabel("Correo").fill("prueba@ejemplo.com");
     await pi.getByRole("button", { name: "Enviarme el acceso" }).click();
     await pi.getByLabel("Código del correo").fill("123456");
     await pi.getByRole("button", { name: "Entrar", exact: true }).click();
@@ -690,6 +697,41 @@ async function main() {
     await pi.waitForURL(/\/(hoy|bienvenida)$/);
     afirmar(true, "con correo y contraseña se entra directo, sin esperar ningún correo");
     await nuevo.close();
+
+    console.log("Seguridad");
+    const respuestaPagina = await pagina.context().request.get(BASE + "/hoy");
+    const csp = respuestaPagina.headers()["content-security-policy"] ?? "";
+    afirmar(/script-src 'self' 'nonce-[^']+' 'strict-dynamic'/.test(csp) && !/script-src[^;]*unsafe-inline/.test(csp),
+      "las páginas llevan una política de contenido estricta con nonce");
+    afirmar((respuestaPagina.headers()["permissions-policy"] ?? "").includes("microphone=(self)") && (respuestaPagina.headers()["permissions-policy"] ?? "").includes("camera=()"),
+      "micrófono solo para el propio sitio; cámara y ubicación apagadas");
+    const nonce = /'nonce-([^']+)'/.exec(csp)?.[1];
+    const html = await respuestaPagina.text();
+    const scripts = [...html.matchAll(/<script\b[^>]*>/g)].map((m) => m[0]);
+    afirmar(scripts.length > 0 && scripts.every((t) => t.includes(`nonce="${nonce}"`)), "todos los scripts de la página llevan el nonce del pedido");
+    const ajeno = await fetch(BASE + "/api/agent/turn", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: "https://otro-sitio.com", Cookie: `${cookieDeSesion().name}=${cookieDeSesion().value}` },
+      body: JSON.stringify({ texto: "hola" }),
+    });
+    afirmar(ajeno.status === 403, "un pedido que modifica algo desde otro sitio (Origin ajeno) se rechaza");
+    await fetch(`${FALSO}/__forzar_limite`, { method: "POST", body: JSON.stringify({ clave: "turno", activo: true }) });
+    await pagina.goto(BASE + "/chat");
+    await pagina.getByLabel("Mensaje para el Agente").fill("¿Seguís ahí?");
+    await pagina.getByLabel("Mensaje para el Agente").press("Enter");
+    await pagina.getByText("Vas muy rápido: esperá un minuto y probá de nuevo.").waitFor();
+    await fetch(`${FALSO}/__forzar_limite`, { method: "POST", body: JSON.stringify({ clave: "turno", activo: false }) });
+    afirmar(true, "al pasarse del límite de frecuencia, el chat muestra un mensaje claro (429)");
+    // Instalación como app y notificaciones: el service worker y el manifest siguen andando con la política nueva.
+    const swActivo = await pagina.evaluate(() =>
+      Promise.race([navigator.serviceWorker.ready.then((r) => Boolean(r.active)), new Promise((ok) => setTimeout(() => ok(false), 10000))]),
+    );
+    const manifiesto = await (await fetch(BASE + "/manifest.webmanifest")).json();
+    afirmar(swActivo && manifiesto.display === "standalone" && manifiesto.icons?.length > 0,
+      "el service worker se registra y el manifest está bien (se puede instalar como app)");
+    // (Chromium sin pantalla niega siempre el permiso de notificaciones: la suscripción real se prueba en un teléfono.)
+    const pushDisponible = await pagina.evaluate(async () => "PushManager" in window && Boolean((await navigator.serviceWorker.ready).pushManager));
+    afirmar(pushDisponible, "la API de notificaciones push sigue disponible para el service worker");
 
     console.log("Celular (390 px)");
     const movil = await navegador.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });

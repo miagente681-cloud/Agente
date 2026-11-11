@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { frenarSiHaceFalta } from "@/lib/seguridad/frecuencia";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { usuarioActual } from "@/lib/supabase/server";
 
@@ -14,6 +15,8 @@ export async function POST(request: NextRequest) {
   if (!leido.success) return NextResponse.json({ error: "Pedido inválido" }, { status: 400 });
   const admin = supabaseAdmin();
   if (!admin) return NextResponse.json({ ok: false });
+  const frenado = await frenarSiHaceFalta(usuario.id, "voz_uso", admin);
+  if (frenado) return frenado;
   if (leido.data.segundos > 0) {
     await admin.rpc("sumar_uso_voz", { p_user: usuario.id, p_stt: leido.data.segundos, p_tts: 0 });
   }

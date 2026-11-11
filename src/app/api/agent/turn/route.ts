@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { Sesion } from "@/lib/agente/datos";
 import { prepararProveedores } from "@/lib/agente/claude/servidor";
 import { correrTurno, resumirSiHaceFalta } from "@/lib/agente/runner";
+import { frenarSiHaceFalta } from "@/lib/seguridad/frecuencia";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer, usuarioActual } from "@/lib/supabase/server";
 
@@ -31,6 +32,9 @@ export async function POST(request: NextRequest) {
   const leido = Cuerpo.safeParse(await request.json().catch(() => null));
   if (!leido.success) return NextResponse.json({ error: "Pedido inválido" }, { status: 400 });
   const cuerpo = leido.data;
+  const admin = supabaseAdmin();
+  const frenado = await frenarSiHaceFalta(usuario.id, "turno", admin);
+  if (frenado) return frenado;
   const sb = await supabaseServer();
 
   let sesion: Sesion | null = null;
@@ -57,10 +61,7 @@ export async function POST(request: NextRequest) {
     if (!sesion) return NextResponse.json({ error: "No se pudo crear la sesión" }, { status: 500 });
   }
 
-  const { proveedores, avisoTope } = await prepararProveedores(sb, {
-    sesionId: sesion.id,
-    sesionYaUsoClaude: (sesion.providers_used ?? []).includes("claude"),
-  });
+  const { proveedores, avisoTope } = await prepararProveedores(sb, { usuario, sesionId: sesion.id, admin });
   const laSesion = sesion;
 
   const codificador = new TextEncoder();
@@ -72,6 +73,7 @@ export async function POST(request: NextRequest) {
         enviar({ tipo: "sesion", id: laSesion.id });
         const turno = correrTurno({
           sb,
+          admin,
           sesion: laSesion,
           proveedores,
           entrada: { texto: cuerpo.texto, inicio: cuerpo.inicio },
@@ -96,10 +98,12 @@ export async function POST(request: NextRequest) {
       }
       // Trabajo que no tiene que demorar la respuesta.
       try {
+        // Lo que se lee en voz alta con Azure suma al cupo. Además, cada token
+        // entregado ya descontó un mínimo (ver /api/voice/token).
         if (cuerpo.voz === "azure" && textoFinal) {
-          await supabaseAdmin()?.rpc("sumar_uso_voz", { p_user: usuario.id, p_stt: 0, p_tts: textoFinal.length });
+          await admin?.rpc("sumar_uso_voz", { p_user: usuario.id, p_stt: 0, p_tts: textoFinal.length });
         }
-        await resumirSiHaceFalta(sb, laSesion, proveedores);
+        await resumirSiHaceFalta(sb, laSesion, proveedores, admin);
       } catch {
         // Si falla, el próximo turno lo vuelve a intentar.
       }

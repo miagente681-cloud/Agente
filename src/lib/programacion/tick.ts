@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { destinoPushValido } from "@/lib/push/destinos";
 import { ajustesDe, cuandoLegible, decidir, type RutinaP, type SesionP, type Ventana } from "./horarios";
 
 /**
@@ -18,7 +19,16 @@ export type ResumenTick = {
   perdidas: number;
   cerradas: number;
   avisos: number;
+  /** Avisos que no se mandaron porque se acabó el tiempo de esta corrida. */
+  postergados: number;
 };
+
+/**
+ * Tiempo total que una corrida puede dedicar a mandar notificaciones. Cada
+ * envío tiene además su propio máximo (ver push/servidor.ts). Lo que no entra
+ * se descarta: un aviso de llamada viejo no sirve, y el estado ya quedó en la base.
+ */
+export const TIEMPO_ENVIOS_POR_CORRIDA_MS = 20_000;
 
 type Fila = SesionP & { user_id: string; focus: string | null; kind: string };
 const CAMPOS =
@@ -30,9 +40,14 @@ export async function correrTick(p: {
   admin: SupabaseClient;
   ahora: Date;
   enviar: EnviarPush | null;
+  /** Para las pruebas: tiempo de envíos de la corrida y reloj. */
+  tiempoEnviosMs?: number;
+  reloj?: () => number;
 }): Promise<ResumenTick> {
   const { admin, ahora } = p;
-  const resumen: ResumenTick = { creadas: 0, notificadas: 0, reprogramadas: 0, perdidas: 0, cerradas: 0, avisos: 0 };
+  const resumen: ResumenTick = { creadas: 0, notificadas: 0, reprogramadas: 0, perdidas: 0, cerradas: 0, avisos: 0, postergados: 0 };
+  const reloj = p.reloj ?? Date.now;
+  const limiteEnvios = reloj() + (p.tiempoEnviosMs ?? TIEMPO_ENVIOS_POR_CORRIDA_MS);
   const ahoraISO = ahora.toISOString();
 
   // Llamadas atendidas y nunca cortadas: se cierran para no quedar "en curso" para siempre.
@@ -168,16 +183,26 @@ export async function correrTick(p: {
       .from("push_subscriptions")
       .select("endpoint,p256dh,auth")
       .eq("user_id", userId);
-    for (const s of (suscripciones ?? []) as Suscripcion[]) {
-      for (const aviso of avisos) {
-        const resultado = await p.enviar(s, aviso);
-        if (resultado === "ok") resumen.avisos++;
-        if (resultado === "vencida") {
-          await admin.from("push_subscriptions").delete().eq("endpoint", s.endpoint);
-          break;
+    // Como mucho 10 por usuario (lo limita la base); solo destinos de push reales.
+    const validas = ((suscripciones ?? []) as Suscripcion[]).filter((s) => destinoPushValido(s.endpoint)).slice(0, 10);
+    const enviar = p.enviar;
+    // Los dispositivos de una persona en paralelo: uno lento no demora a los otros.
+    await Promise.all(
+      validas.map(async (s) => {
+        for (const aviso of avisos) {
+          if (reloj() >= limiteEnvios) {
+            resumen.postergados++;
+            continue;
+          }
+          const resultado = await enviar(s, aviso);
+          if (resultado === "ok") resumen.avisos++;
+          if (resultado === "vencida") {
+            await admin.from("push_subscriptions").delete().eq("endpoint", s.endpoint);
+            break;
+          }
         }
-      }
-    }
+      }),
+    );
   }
   return resumen;
 }

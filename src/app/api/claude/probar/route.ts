@@ -1,13 +1,16 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextResponse } from "next/server";
-import { MODELOS_POR_DEFECTO } from "@/lib/agente/claude/config";
+import { MODELOS_POR_DEFECTO, topeGlobalDe } from "@/lib/agente/claude/config";
 import { registrarUso } from "@/lib/agente/claude/presupuesto";
 import { clienteClaude, hayClaveClaude } from "@/lib/agente/proveedores/indice";
+import { frenarSiHaceFalta } from "@/lib/seguridad/frecuencia";
+import { puedeUsarClaude } from "@/lib/seguridad/permitidos";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer, usuarioActual } from "@/lib/supabase/server";
 
 export type ResultadoPrueba =
   | { ok: true; modelo: string; ms: number }
-  | { ok: false; motivo: "sin_configurar" | "clave" | "credito" | "limite" | "sobrecarga" | "sin_respuesta" | "otro"; mensaje: string };
+  | { ok: false; motivo: "sin_configurar" | "no_permitido" | "clave" | "credito" | "limite" | "sobrecarga" | "sin_respuesta" | "otro"; mensaje: string };
 
 const MENSAJES: Record<string, string> = {
   clave: "La clave no es válida o fue revocada. Creá otra en la consola de Claude y cargala en Vercel.",
@@ -24,12 +27,23 @@ const MENSAJES: Record<string, string> = {
  * sirve o no hay crédito, la deja puesta (así no se reintenta en cada mensaje).
  */
 export async function POST() {
-  if (!(await usuarioActual())) return NextResponse.json({ error: "Sin sesión" }, { status: 401 });
-  if (!hayClaveClaude()) {
-    return NextResponse.json({ ok: false, motivo: "sin_configurar", mensaje: "Falta cargar ANTHROPIC_API_KEY en Vercel." } satisfies ResultadoPrueba);
+  const usuario = await usuarioActual();
+  if (!usuario) return NextResponse.json({ error: "Sin sesión" }, { status: 401 });
+  if (!puedeUsarClaude(usuario.email)) {
+    return NextResponse.json({ ok: false, motivo: "no_permitido", mensaje: "Claude no está habilitado para tu cuenta." } satisfies ResultadoPrueba);
   }
+  const admin = supabaseAdmin();
+  if (!hayClaveClaude() || !admin) {
+    return NextResponse.json({
+      ok: false,
+      motivo: "sin_configurar",
+      mensaje: !admin ? "Falta cargar SUPABASE_SERVICE_ROLE_KEY en Vercel." : "Falta cargar ANTHROPIC_API_KEY en Vercel.",
+    } satisfies ResultadoPrueba);
+  }
+  const frenado = await frenarSiHaceFalta(usuario.id, "claude_probar", admin);
+  if (frenado) return frenado;
   const sb = await supabaseServer();
-  const { data } = await sb.from("profiles").select("user_id,timezone,agent_config").maybeSingle();
+  const { data } = await sb.from("profiles").select("user_id,timezone,agent_config").eq("user_id", usuario.id).maybeSingle();
   const perfil = data as { user_id: string; timezone: string; agent_config: Record<string, unknown> } | null;
   const modelo = MODELOS_POR_DEFECTO.chat;
   const inicio = Date.now();
@@ -46,7 +60,9 @@ export async function POST() {
     );
     resultado = { ok: true, modelo: r.model, ms: Date.now() - inicio };
     if (perfil) {
-      await registrarUso(sb, {
+      await registrarUso(admin, {
+        userId: usuario.id,
+        topeGlobal: topeGlobalDe(),
         sesionId: null,
         modelo,
         uso: "fondo",

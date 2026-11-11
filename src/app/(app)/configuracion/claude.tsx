@@ -7,58 +7,74 @@ import { Campo, Entrada, Selector } from "@/components/ui/campo";
 import { estadoApp, type EstadoApp } from "@/lib/agente/cliente";
 import { configClaude, problemaVigente, USOS } from "@/lib/agente/claude/config";
 import { MODELOS_CLAUDE, modeloClaude } from "@/lib/agente/claude/precios";
-import { formatoUSD, mesDe, UMBRAL_AVISO } from "@/lib/agente/claude/presupuesto";
+import { formatoUSD, UMBRAL_AVISO } from "@/lib/agente/claude/presupuesto";
 import { useDatos } from "@/lib/datos/almacen";
 import { usePerfil } from "@/lib/datos/perfil";
-import { supabaseBrowser } from "@/lib/supabase/client";
+import type { GastoClaude } from "@/app/api/claude/gasto/route";
 import type { ResultadoPrueba } from "@/app/api/claude/probar/route";
 
-type FilaUso = { uso: string; model: string; cost_usd: number | string };
+type FilaUso = GastoClaude["desglose"][number];
 
 const NOMBRE_USO: Record<string, string> = Object.fromEntries(USOS.map((u) => [u.id, u.nombre]));
 
 function sumar(filas: FilaUso[], clave: "uso" | "model") {
   const totales = new Map<string, number>();
-  for (const f of filas) totales.set(f[clave], (totales.get(f[clave]) ?? 0) + Number(f.cost_usd));
+  for (const f of filas) totales.set(f[clave], (totales.get(f[clave]) ?? 0) + f.total);
   return [...totales.entries()].sort((a, b) => b[1] - a[1]);
 }
 
 /** Claude dentro de «Cerebro del Agente»: prueba de conexión, gasto del mes, tope y modelo de cada uso. */
 export function ConfigClaude() {
-  const { zona, avisar } = useDatos();
+  const { avisar } = useDatos();
   const { perfil, guardarConfig } = usePerfil();
   const [estado, setEstado] = useState<EstadoApp | null>(null);
-  const [filas, setFilas] = useState<FilaUso[] | null>(null);
+  const [gastoMes, setGastoMes] = useState<GastoClaude | null>(null);
   const [prueba, setPrueba] = useState<ResultadoPrueba | null>(null);
   const [probando, setProbando] = useState(false);
-  const mes = mesDe(new Date(), zona);
+  const topeGuardado = perfil?.agent_config.claude_tope_usd;
 
   useEffect(() => {
     let vigente = true;
     (async () => {
-      const [e, u] = await Promise.all([
-        estadoApp(),
-        supabaseBrowser().from("llm_usage").select("uso,model,cost_usd").eq("mes", mes).limit(10_000),
-      ]);
+      const e = await estadoApp();
+      // El gasto lo suma el servidor (el registro solo lo escribe él).
+      const g = e?.claude
+        ? ((await fetch("/api/claude/gasto")
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null)) as GastoClaude | null)
+        : null;
       if (!vigente) return;
       setEstado(e);
-      setFilas((u.data as FilaUso[] | null) ?? []);
+      setGastoMes(g);
     })();
     return () => {
       vigente = false;
     };
-  }, [mes]);
+  }, [topeGuardado]);
 
   async function probar() {
     setProbando(true);
     const r = (await fetch("/api/claude/probar", { method: "POST" })
-      .then((x) => x.json())
+      .then(async (x) => {
+        const cuerpo = await x.json().catch(() => null);
+        // 429: se pasó el límite de pruebas; el servidor manda el mensaje.
+        if (!x.ok) return { ok: false, motivo: "otro", mensaje: cuerpo?.error ?? "No se pudo probar. Probá en un rato." };
+        return cuerpo;
+      })
       .catch(() => ({ ok: false, motivo: "sin_respuesta", mensaje: "No hay conexión." }))) as ResultadoPrueba;
     setPrueba(r);
     setProbando(false);
   }
 
   if (!estado) return null;
+  if (!estado.claude && !estado.detalle) {
+    return (
+      <div className="mt-4 rounded-md border border-borde px-3 py-2.5 text-[13px] text-texto-2">
+        <p className="font-medium text-texto">Claude</p>
+        <p className="mt-1">Claude no está habilitado para tu cuenta. El Agente usa los modelos gratuitos.</p>
+      </div>
+    );
+  }
   if (!estado.claude) {
     return (
       <div className="mt-4 rounded-md border border-borde px-3 py-2.5 text-[13px] text-texto-2">
@@ -74,9 +90,16 @@ export function ConfigClaude() {
     );
   }
 
-  const config = configClaude(perfil?.agent_config);
-  const gasto = (filas ?? []).reduce((t, f) => t + Number(f.cost_usd), 0);
-  const porcentaje = config.topeUSD > 0 ? Math.min(100, (gasto / config.topeUSD) * 100) : 100;
+  const topeGlobal = gastoMes?.topeGlobal;
+  const config = configClaude(perfil?.agent_config, topeGlobal);
+  const filas = gastoMes?.desglose ?? null;
+  const gasto = gastoMes?.propio ?? 0;
+  const gastoGlobal = gastoMes?.global ?? 0;
+  // Manda el tope que esté más cerca: el propio o el de todo el despliegue.
+  const porcentaje = Math.max(
+    config.topeUSD > 0 ? (gasto / config.topeUSD) * 100 : 100,
+    topeGlobal ? (gastoGlobal / topeGlobal) * 100 : 0,
+  );
   const problema = perfil ? problemaVigente(perfil.agent_config, new Date()) : null;
   const guardar = async (cambios: Record<string, unknown>) => {
     if (!(await guardarConfig(cambios))) avisar("No se pudo guardar.");
@@ -111,8 +134,16 @@ export function ConfigClaude() {
             {formatoUSD(gasto)} de {formatoUSD(config.topeUSD)}
           </span>
         </p>
-        <div role="progressbar" aria-label="Gasto de Claude este mes" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(porcentaje)} className="h-1.5 overflow-hidden rounded-full bg-borde">
-          <div className={`h-full rounded-full ${porcentaje >= 100 ? "bg-peligro" : porcentaje >= UMBRAL_AVISO * 100 ? "bg-aviso" : "bg-acento"}`} style={{ width: `${porcentaje}%` }} />
+        {topeGlobal !== undefined ? (
+          <p className="flex justify-between text-[13px]">
+            <span className="text-texto-2">Todo el despliegue</span>
+            <span className="font-mono text-xs text-texto-3">
+              {formatoUSD(gastoGlobal)} de {formatoUSD(topeGlobal)}
+            </span>
+          </p>
+        ) : null}
+        <div role="progressbar" aria-label="Gasto de Claude este mes" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(Math.min(100, porcentaje))} className="h-1.5 overflow-hidden rounded-full bg-borde">
+          <div className={`h-full rounded-full ${porcentaje >= 100 ? "bg-peligro" : porcentaje >= UMBRAL_AVISO * 100 ? "bg-aviso" : "bg-acento"}`} style={{ width: `${Math.min(100, porcentaje)}%` }} />
         </div>
         {porcentaje >= 100 ? (
           <p className="text-[13px] text-peligro">Llegaste al tope: hasta el mes que viene responden los modelos gratuitos.</p>
@@ -146,11 +177,12 @@ export function ConfigClaude() {
         </p>
       </div>
 
-      <Campo etiqueta="Tope mensual (US$)" htmlFor="claude-tope" ayuda="Al 80 % te aviso; al llegar, sigo con los modelos gratuitos hasta el mes que viene.">
+      <Campo etiqueta="Tope mensual (US$)" htmlFor="claude-tope" ayuda={`Al 80 % te aviso; al llegar, sigo con los modelos gratuitos hasta el mes que viene. Solo puede bajar el límite: el máximo es el del despliegue${topeGlobal !== undefined ? ` (${formatoUSD(topeGlobal)})` : ""}.`}>
         <Entrada
           id="claude-tope"
           type="number"
           min={0}
+          max={topeGlobal}
           step="0.5"
           key={`tope-${config.topeUSD}`}
           defaultValue={config.topeUSD}

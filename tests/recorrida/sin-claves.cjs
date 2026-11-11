@@ -24,7 +24,8 @@ async function main() {
     Object.entries(process.env).filter(([k]) => !/^(GEMINI|GROQ|OLLAMA|AZURE|VAPID|NEXT_PUBLIC_VAPID|CRON|SUPABASE_SERVICE)/.test(k)),
   );
   const next = spawn(process.execPath, [require.resolve("next/dist/bin/next"), "start", "-p", "3101"], {
-    env: { ...limpio, NEXT_PUBLIC_SUPABASE_URL: FALSO, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "clave-falsa" },
+    // La cuenta de prueba administra el despliegue (ve el detalle de /configurar).
+    env: { ...limpio, NEXT_PUBLIC_SUPABASE_URL: FALSO, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "clave-falsa", CLAUDE_USUARIOS_PERMITIDOS: "prueba@ejemplo.com" },
     stdio: "ignore",
   });
   const navegador = await chromium.launch();
@@ -57,8 +58,8 @@ async function main() {
     await pagina.getByText("Falta configurar el cerebro del Agente.").waitFor();
     await pagina.getByLabel("Mensaje para el Agente").fill("Hola");
     await pagina.getByLabel("Mensaje para el Agente").press("Enter");
-    await pagina.getByText(/todavía no tiene un modelo configurado/).waitFor();
-    afirmar(true, "el chat avisa que falta la clave en lugar de fallar");
+    await pagina.getByText(/Falta configurar la clave de servicio/).waitFor();
+    afirmar(true, "el chat avisa que falta la clave de servicio en lugar de fallar (sin ella no se puede limitar el uso)");
 
     const token = await pedir("/api/voice/token");
     afirmar(token.estado === 200 && JSON.parse(token.cuerpo).motivo === "sin_configurar", "sin Azure, el servidor responde que la voz usa el navegador");

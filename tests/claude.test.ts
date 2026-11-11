@@ -36,6 +36,7 @@ beforeEach(() => {
   supa.reiniciar();
 });
 
+const USUARIO_ID = "11111111-1111-1111-1111-111111111111";
 const cliente = () => new Anthropic({ apiKey: "clave-de-prueba", baseURL: urlModelos, maxRetries: 0 });
 type Registro = { modelo: string; uso: Uso; tokens: { entrada: number; salida: number; cache5m: number; cache1h: number; lectura: number } };
 
@@ -107,9 +108,14 @@ describe("qué modelo responde cada uso", () => {
   });
 
   it("lo que se elige en Configuración manda, solo dentro de la lista cerrada", () => {
-    const c = configClaude({ claude_modelos: { chat: "claude-sonnet-5-5", fondo: "gpt-5", llamada: 3 }, claude_tope_usd: 25 });
+    const c = configClaude({ claude_modelos: { chat: "claude-sonnet-5-5", fondo: "gpt-5", llamada: 3 }, claude_tope_usd: 25 }, 50);
     expect(c.modelos).toEqual({ ...MODELOS_POR_DEFECTO, chat: "claude-sonnet-5-5" });
     expect(c.topeUSD).toBe(25);
+    // El tope del perfil lo escribe la persona: solo puede bajar el límite, nunca pasar el global.
+    expect(configClaude({ claude_tope_usd: 1000 }, 10).topeUSD).toBe(10);
+    expect(configClaude({ claude_tope_usd: "1e9" }, 10).topeUSD).toBe(10);
+    expect(configClaude({ claude_tope_usd: -5 }, 10).topeUSD).toBe(10);
+    expect(configClaude({ claude_tope_usd: 3 }, 10)).toMatchObject({ topeUSD: 3, topePropio: true });
   });
 
   it("cada pedido sale con el modelo de su uso, también después de cambiarlo", async () => {
@@ -363,14 +369,23 @@ describe("presupuesto mensual", () => {
   const evaluar = (extra: Partial<Parameters<typeof evaluarPresupuesto>[0]>) =>
     evaluarPresupuesto({ hayClave: true, agentConfig: {}, gastoMes: 0, mes: "2026-11", ahora: new Date("2026-11-10T15:00:00Z"), sesionYaUsoClaude: false, ...extra });
 
-  it("dentro del tope se usa; al llegar, no; una sesión que ya empezó con Claude la termina con Claude", () => {
+  it("dentro del tope se usa; al llegar, no; una sesión que ya empezó con Claude sigue, como mucho un 20 % más", () => {
     expect(evaluar({ gastoMes: 9.99 })).toMatchObject({ disponible: true, motivo: null });
     expect(evaluar({ gastoMes: 10 })).toMatchObject({ disponible: false, motivo: "tope", avisarTope: true });
     expect(evaluar({ gastoMes: 10.02, sesionYaUsoClaude: true })).toMatchObject({ disponible: true });
+    expect(evaluar({ gastoMes: 11.99, sesionYaUsoClaude: true })).toMatchObject({ disponible: true });
+    expect(evaluar({ gastoMes: 12, sesionYaUsoClaude: true })).toMatchObject({ disponible: false, motivo: "tope" });
     // El aviso de «sigo con el gratuito» sale una sola vez por mes.
     expect(evaluar({ gastoMes: 12, agentConfig: { claude_tope_avisado: "2026-11" } })).toMatchObject({ disponible: false, avisarTope: false });
     expect(evaluar({ gastoMes: 12, agentConfig: { claude_tope_avisado: "2026-10" } })).toMatchObject({ avisarTope: true });
-    expect(evaluar({ gastoMes: 30, agentConfig: { claude_tope_usd: 50 } })).toMatchObject({ disponible: true, topeUSD: 50 });
+    // Subirse el tope en el perfil no cambia el tope efectivo.
+    expect(evaluar({ gastoMes: 30, agentConfig: { claude_tope_usd: 50 } })).toMatchObject({ disponible: false, topeUSD: 10 });
+    expect(evaluar({ gastoMes: 30, topeGlobal: 50, gastoGlobal: 30, agentConfig: { claude_tope_usd: 50 } })).toMatchObject({ disponible: true, topeUSD: 50 });
+    // El global corta aunque la persona esté lejos de su tope.
+    expect(evaluar({ gastoMes: 1, gastoGlobal: 10, topeGlobal: 10 })).toMatchObject({ disponible: false, motivo: "tope" });
+    expect(evaluar({ gastoMes: 1, gastoGlobal: 11.9, topeGlobal: 10, sesionYaUsoClaude: true })).toMatchObject({ disponible: true });
+    expect(evaluar({ gastoMes: 1, gastoGlobal: 12, topeGlobal: 10, sesionYaUsoClaude: true })).toMatchObject({ disponible: false });
+    expect(evaluar({ agentConfig: { claude_tope_usd: 0 } })).toMatchObject({ disponible: false, motivo: "tope" });
     expect(evaluar({ hayClave: false })).toMatchObject({ disponible: false, motivo: "sin_clave" });
   });
 
@@ -385,7 +400,8 @@ describe("presupuesto mensual", () => {
   it("registra cada pedido con su costo; el aviso del 80 % sale una sola vez y el contador vuelve a cero al cambiar de mes", async () => {
     supa.estado().profiles[0].agent_config = { claude_tope_usd: 1 };
     const tokens = { entrada: 0, salida: 400_000, cache5m: 0, cache1h: 0, lectura: 0 }; // 0,20 US$ en Haiku
-    const reg = (ahora: string) => registrarUso(sb, { sesionId: null, modelo: "claude-haiku-5-5", uso: "chat", tokens, zona: MVD, ahora: new Date(ahora) });
+    const reg = (ahora: string) =>
+      registrarUso(sb, { userId: USUARIO_ID, sesionId: null, modelo: "claude-haiku-5-5", uso: "chat", tokens, zona: MVD, ahora: new Date(ahora) });
 
     const avisos = [];
     for (let i = 0; i < 6; i++) avisos.push((await reg("2026-11-20T15:00:00Z")).aviso80);
@@ -393,7 +409,7 @@ describe("presupuesto mensual", () => {
     expect(avisos.map((a) => (a ? Number(a.gasto.toFixed(2)) : null))).toEqual([null, null, null, 0.8, null, null]);
     expect(supa.estado().profiles[0].agent_config.claude_aviso_80).toBe("2026-11");
     const filas = supa.estado().llm_usage;
-    expect(filas[0]).toMatchObject({ provider: "claude", model: "claude-haiku-5-5", uso: "chat", mes: "2026-11", output_tokens: 400_000, cost_usd: 0.2 });
+    expect(filas[0]).toMatchObject({ user_id: USUARIO_ID, provider: "claude", model: "claude-haiku-5-5", uso: "chat", mes: "2026-11", output_tokens: 400_000, cost_usd: 0.2 });
 
     // 30 de noviembre a las 23:30 en Montevideo sigue siendo noviembre…
     expect((await reg("2026-12-01T02:30:00Z")).aviso80).toBeNull();
