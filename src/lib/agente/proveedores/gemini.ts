@@ -1,4 +1,4 @@
-import { ErrorProveedor, type MensajeLLM, type PedidoLLM, type ProveedorLLM, type Trozo } from "../tipos";
+import { ErrorProveedor, usoDe, type MensajeLLM, type PedidoLLM, type ProveedorLLM, type Trozo } from "../tipos";
 import { eventosSSE, pedir } from "./comun";
 
 type Parte = {
@@ -54,9 +54,9 @@ export function crearGemini(config: {
 
   return {
     id: "gemini",
-    modelo: (liviano) => (liviano ? config.modeloFondo : config.modeloChat),
+    modelo: (uso) => (uso === "fondo" ? config.modeloFondo : config.modeloChat),
     async *generar(pedido: PedidoLLM): AsyncGenerator<Trozo> {
-      const modelo = pedido.liviano ? config.modeloFondo : config.modeloChat;
+      const modelo = usoDe(pedido) === "fondo" ? config.modeloFondo : config.modeloChat;
       const respuesta = await pedir(
         "gemini",
         `${base}/v1beta/models/${encodeURIComponent(modelo)}:streamGenerateContent?alt=sse`,

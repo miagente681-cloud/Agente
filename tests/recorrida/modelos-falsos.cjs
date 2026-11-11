@@ -10,10 +10,74 @@
  * Sin guion, responde un texto fijo.
  */
 const http = require("node:http");
+const { createHash } = require("node:crypto");
+
+/**
+ * Caché de prompts de mentira, con las reglas de la API real: se escribe solo
+ * en los puntos marcados con cache_control, se busca hacia atrás hasta 20
+ * bloques, y no se guarda un prefijo de menos de 512 tokens. Los tokens se
+ * estiman en 4 caracteres cada uno.
+ */
+function crearCacheClaude() {
+  const guardados = new Set();
+  const MINIMO = 512;
+  const sinMarca = (bloque) => {
+    if (!bloque || typeof bloque !== "object") return bloque;
+    const { cache_control: _, ...resto } = bloque;
+    return resto;
+  };
+  return function calcular(cuerpo) {
+    // Orden en que la API arma el pedido: herramientas, sistema, mensajes.
+    const bloques = [];
+    for (const t of cuerpo.tools ?? []) bloques.push(t);
+    const sistema = typeof cuerpo.system === "string" ? [{ type: "text", text: cuerpo.system }] : (cuerpo.system ?? []);
+    for (const b of sistema) bloques.push(b);
+    for (const m of cuerpo.messages ?? []) {
+      const contenido = typeof m.content === "string" ? [{ type: "text", text: m.content }] : m.content;
+      contenido.forEach((b, i) => bloques.push({ ...b, __rol: i === 0 ? m.role : undefined }));
+    }
+    let hash = cuerpo.model;
+    let tokens = 0;
+    const posiciones = bloques.map((b) => {
+      tokens += Math.ceil(JSON.stringify(sinMarca(b)).length / 4);
+      hash = createHash("sha1").update(hash + JSON.stringify(sinMarca(b))).digest("hex");
+      return { hash, tokens, marca: b.cache_control ?? null };
+    });
+    const total = tokens;
+    const puntos = posiciones.map((p, i) => ({ ...p, i })).filter((p) => p.marca);
+    let leido = 0;
+    for (const p of puntos) {
+      for (let j = p.i; j >= 0 && j > p.i - 20; j--) {
+        if (guardados.has(posiciones[j].hash)) {
+          leido = Math.max(leido, posiciones[j].tokens);
+          break;
+        }
+      }
+    }
+    let escrito5m = 0;
+    let escrito1h = 0;
+    let hasta = leido;
+    for (const p of puntos) {
+      if (p.tokens < MINIMO || p.tokens <= hasta) continue;
+      guardados.add(p.hash);
+      const nuevos = p.tokens - hasta;
+      if (p.marca.ttl === "1h") escrito1h += nuevos;
+      else escrito5m += nuevos;
+      hasta = p.tokens;
+    }
+    return {
+      input_tokens: total - Math.max(leido, hasta),
+      cache_read_input_tokens: leido,
+      cache_creation_input_tokens: escrito5m + escrito1h,
+      cache_creation: { ephemeral_5m_input_tokens: escrito5m, ephemeral_1h_input_tokens: escrito1h },
+    };
+  };
+}
 
 function crearModelos() {
   let guion = [];
   let pedidos = [];
+  let cacheClaude = crearCacheClaude();
 
   function siguiente(proveedor, sistema) {
     const i = guion.findIndex(
@@ -31,16 +95,63 @@ function crearModelos() {
         res.writeHead(estado, { "Content-Type": "application/json" });
         res.end(JSON.stringify(cuerpo));
       };
+      /** API de Messages de Anthropic, con streaming y caché. */
+      function claude(cuerpo) {
+        // Los SDK actuales mandan la clave como «Authorization: Bearer»; los anteriores, como x-api-key.
+        if (!req.headers["x-api-key"] && !/^Bearer .+/.test(req.headers.authorization ?? "")) return json(401, { type: "error", error: { type: "authentication_error", message: "Falta la clave" } });
+        const sistema = (cuerpo.system ?? []).map((b) => b.text).join("\n\n");
+        pedidos.push({ proveedor: "claude", ruta: url.pathname, cabeceras: req.headers, cuerpo });
+        const paso = siguiente("claude", sistema);
+        if (paso.estado) {
+          const tipos = { 400: "invalid_request_error", 401: "authentication_error", 402: "billing_error", 403: "permission_error", 429: "rate_limit_error", 529: "overloaded_error" };
+          return json(paso.estado, { type: "error", error: { type: tipos[paso.estado] ?? "api_error", message: paso.mensaje ?? "Error de prueba" } });
+        }
+        const uso = cacheClaude(cuerpo);
+        const texto = paso.texto ?? "";
+        const llamadas = (paso.llamadas ?? []).map((l, i) => ({ type: "tool_use", id: `toolu_${pedidos.length}_${i}`, name: l.nombre, input: l.argumentos }));
+        const salida = Math.max(1, Math.ceil(texto.length / 4) + llamadas.length * 20);
+        const stop = paso.refusal ? "refusal" : llamadas.length ? "tool_use" : "end_turn";
+        const contenido = [...(texto ? [{ type: "text", text: texto }] : []), ...llamadas];
+        const mensaje = { id: `msg_${pedidos.length}`, type: "message", role: "assistant", model: cuerpo.model, stop_reason: null, stop_sequence: null, content: [], usage: { ...uso, output_tokens: 1 } };
+        if (!cuerpo.stream) {
+          return json(200, { ...mensaje, content: contenido, stop_reason: stop, usage: { ...uso, output_tokens: salida } });
+        }
+        res.writeHead(200, { "Content-Type": "text/event-stream" });
+        const ev = (tipo, dato) => res.write(`event: ${tipo}\ndata: ${JSON.stringify({ type: tipo, ...dato })}\n\n`);
+        ev("message_start", { message: mensaje });
+        let i = 0;
+        if (texto) {
+          const mitad = Math.ceil(texto.length / 2);
+          ev("content_block_start", { index: i, content_block: { type: "text", text: "" } });
+          for (const p of [texto.slice(0, mitad), texto.slice(mitad)].filter(Boolean)) ev("content_block_delta", { index: i, delta: { type: "text_delta", text: p } });
+          if (paso.cortar) return res.destroy();
+          ev("content_block_stop", { index: i });
+          i++;
+        }
+        for (const l of llamadas) {
+          const args = JSON.stringify(l.input);
+          ev("content_block_start", { index: i, content_block: { type: "tool_use", id: l.id, name: l.name, input: {} } });
+          ev("content_block_delta", { index: i, delta: { type: "input_json_delta", partial_json: args.slice(0, 5) } });
+          ev("content_block_delta", { index: i, delta: { type: "input_json_delta", partial_json: args.slice(5) } });
+          ev("content_block_stop", { index: i });
+          i++;
+        }
+        ev("message_delta", { delta: { stop_reason: stop, stop_sequence: null }, usage: { output_tokens: salida } });
+        ev("message_stop", {});
+        res.end();
+      }
+
       if (url.pathname === "/__guion") return (guion = JSON.parse(crudo)), json(200, {});
       if (url.pathname === "/__agregar") return guion.push(...JSON.parse(crudo)), json(200, {});
       if (url.pathname === "/__pedidos") return json(200, pedidos);
-      if (url.pathname === "/__reiniciar") return (guion = []), (pedidos = []), json(200, {});
+      if (url.pathname === "/__reiniciar") return (guion = []), (pedidos = []), (cacheClaude = crearCacheClaude()), json(200, {});
       if (url.pathname === "/sts/v1.0/issueToken") {
         res.writeHead(req.headers["ocp-apim-subscription-key"] ? 200 : 401);
         return res.end("token-de-mentira");
       }
 
       const cuerpo = crudo ? JSON.parse(crudo) : {};
+      if (url.pathname === "/v1/messages") return claude(cuerpo);
       const proveedor = url.pathname.includes(":streamGenerateContent") ? "gemini" : url.pathname === "/api/chat" ? "ollama" : "groq";
       const sistema =
         proveedor === "gemini"
@@ -104,7 +215,12 @@ function crearModelos() {
   });
   servidor.guion = (pasos) => (guion = [...pasos]);
   servidor.pedidos = () => pedidos;
-  servidor.reiniciar = () => ((guion = []), (pedidos = []));
+  // Sin devolver nada: vitest toma una función devuelta por beforeEach como limpieza y la llama.
+  servidor.reiniciar = () => {
+    guion = [];
+    pedidos = [];
+    cacheClaude = crearCacheClaude();
+  };
   return servidor;
 }
 

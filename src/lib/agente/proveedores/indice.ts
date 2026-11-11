@@ -1,11 +1,14 @@
 import "server-only";
+import Anthropic from "@anthropic-ai/sdk";
 import type { ProveedorLLM } from "../tipos";
+import { crearClaude, type ConfigAdaptadorClaude } from "./claude";
 import { crearGemini } from "./gemini";
 import { crearOllama } from "./ollama";
 import { crearCompatibleOpenAI } from "./openai";
 
-export const ORDEN_POR_DEFECTO = ["gemini", "groq", "ollama"];
+export const ORDEN_POR_DEFECTO = ["claude", "gemini", "groq", "ollama"];
 export const NOMBRES_PROVEEDOR: Record<string, string> = {
+  claude: "Claude",
   gemini: "Gemini",
   groq: "Groq",
   ollama: "Modelo local (Ollama)",
@@ -13,7 +16,30 @@ export const NOMBRES_PROVEEDOR: Record<string, string> = {
 
 const env = (n: string) => (process.env[n] ?? "").trim();
 
-function crear(id: string): ProveedorLLM | null {
+export const hayClaveClaude = () => env("ANTHROPIC_API_KEY") !== "";
+
+/**
+ * Cliente del SDK oficial. La clave sale de la variable de entorno y nunca se
+ * escribe en ningún lado. Sin reintentos: si Claude falla, responde el
+ * siguiente proveedor en lugar de hacer esperar a la persona.
+ */
+export function clienteClaude(): Anthropic {
+  return new Anthropic({
+    apiKey: env("ANTHROPIC_API_KEY"),
+    // Solo para las pruebas: apunta el SDK a un servidor de mentira.
+    ...(env("ANTHROPIC_BASE_URL") ? { baseURL: env("ANTHROPIC_BASE_URL") } : {}),
+    maxRetries: 0,
+    timeout: 90_000,
+  });
+}
+
+export type OpcionesClaude = Omit<ConfigAdaptadorClaude, "cliente">;
+
+function crear(id: string, claude: OpcionesClaude | null): ProveedorLLM | null {
+  if (id === "claude") {
+    // Solo si hay clave y el presupuesto del mes lo permite (lo decide quien llama).
+    return hayClaveClaude() && claude ? crearClaude({ cliente: clienteClaude(), ...claude }) : null;
+  }
   if (id === "gemini" && env("GEMINI_API_KEY")) {
     return crearGemini({
       clave: env("GEMINI_API_KEY"),
@@ -43,8 +69,16 @@ function crear(id: string): ProveedorLLM | null {
 }
 
 /** Proveedores configurados, en el orden que eligió el usuario. */
-export function proveedoresEnOrden(orden?: unknown): ProveedorLLM[] {
+export function ordenEfectivo(orden?: unknown): string[] {
   const pedido = Array.isArray(orden) ? orden.filter((x): x is string => typeof x === "string") : [];
-  const ids = [...new Set([...pedido, ...ORDEN_POR_DEFECTO])].filter((id) => id in NOMBRES_PROVEEDOR);
-  return ids.map(crear).filter((p): p is ProveedorLLM => p !== null);
+  // Un orden guardado antes de que existiera Claude no lo trae: va primero, como el orden por defecto.
+  const conClaude = pedido.length && !pedido.includes("claude") ? ["claude", ...pedido] : pedido;
+  return [...new Set([...conClaude, ...ORDEN_POR_DEFECTO])].filter((id) => id in NOMBRES_PROVEEDOR);
+}
+
+/** Proveedores configurados, en el orden que eligió el usuario. Claude, solo con sus opciones. */
+export function proveedoresEnOrden(orden?: unknown, claude: OpcionesClaude | null = null): ProveedorLLM[] {
+  return ordenEfectivo(orden)
+    .map((id) => crear(id, claude))
+    .filter((p): p is ProveedorLLM => p !== null);
 }

@@ -6,13 +6,14 @@ import { useCallback, useEffect, useState } from "react";
 import { TarjetaCambio, type CambioVista } from "@/components/agente/tarjeta-cambio";
 import { Boton } from "@/components/ui/boton";
 import { Etiqueta, Tarjeta, Vacio } from "@/components/ui/varios";
-import { NOMBRE_PROVEEDOR } from "@/lib/agente/cliente";
+import { NOMBRE_PROVEEDOR, nombreModelo } from "@/lib/agente/cliente";
+import { formatoUSD } from "@/lib/agente/claude/presupuesto";
 import { useDatos } from "@/lib/datos/almacen";
 import { etiquetaFecha } from "@/lib/datos/fechas";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { cuando, ESTADO_SESION, TIPO_SESION, type FilaSesion } from "../lista";
 
-type Mensaje = { id: string; role: string; content: string | null; provider: string | null };
+type Mensaje = { id: string; role: string; content: string | null; provider: string | null; model: string | null };
 
 /** Resumen de una sesión: qué se habló, qué se comprometió y todo lo que cambió. */
 export function DetalleSesion({ id }: { id: string }) {
@@ -20,15 +21,19 @@ export function DetalleSesion({ id }: { id: string }) {
   const [sesion, setSesion] = useState<FilaSesion | null | undefined>(undefined);
   const [cambios, setCambios] = useState<CambioVista[]>([]);
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
+  const [costo, setCosto] = useState<{ total: number; pedidos: number } | null>(null);
   const [generando, setGenerando] = useState(false);
 
   const cargar = useCallback(async () => {
     const sb = supabaseBrowser();
-    const [s, c, m] = await Promise.all([
+    const [s, c, m, u] = await Promise.all([
       sb.from("sessions").select("*").eq("id", id).maybeSingle(),
       sb.from("change_log").select("id,operation,summary,undone_at").eq("session_id", id).order("created_at"),
-      sb.from("messages").select("id,role,content,provider").eq("session_id", id).in("role", ["usuario", "agente"]).order("created_at").limit(400),
+      sb.from("messages").select("id,role,content,provider,model").eq("session_id", id).in("role", ["usuario", "agente"]).order("created_at").limit(400),
+      sb.from("llm_usage").select("cost_usd").eq("session_id", id),
     ]);
+    const usos = (u.data as { cost_usd: number | string }[] | null) ?? [];
+    setCosto(usos.length ? { total: usos.reduce((t, f) => t + Number(f.cost_usd), 0), pedidos: usos.length } : null);
     setSesion((s.data as FilaSesion | null) ?? null);
     setCambios((c.data as CambioVista[] | null) ?? []);
     setMensajes(((m.data as Mensaje[] | null) ?? []).filter((x) => x.content));
@@ -79,6 +84,11 @@ export function DetalleSesion({ id }: { id: string }) {
           {sesion.providers_used?.length ? (
             <span className="text-texto-3">
               Respondió {sesion.providers_used.map((p) => NOMBRE_PROVEEDOR[p] ?? p).join(" y ")}
+            </span>
+          ) : null}
+          {costo ? (
+            <span className="text-texto-3" title="Estimación con los precios publicados; el gasto real está en la consola de Claude">
+              · Claude: {formatoUSD(costo.total)} en {costo.pedidos} {costo.pedidos === 1 ? "pedido" : "pedidos"} (estimado)
             </span>
           ) : null}
         </p>
@@ -155,7 +165,7 @@ export function DetalleSesion({ id }: { id: string }) {
             {mensajes.map((m) => (
               <li key={m.id} className="flex flex-col gap-0.5">
                 <span className="text-xs text-texto-3">
-                  {m.role === "usuario" ? "Vos" : `Agente${m.provider ? ` · ${NOMBRE_PROVEEDOR[m.provider] ?? m.provider}` : ""}`}
+                  {m.role === "usuario" ? "Vos" : `Agente${m.provider ? ` · ${nombreModelo(m.provider, m.model)}` : ""}`}
                 </span>
                 <p className="whitespace-pre-wrap text-sm">{m.content}</p>
               </li>

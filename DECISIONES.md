@@ -141,8 +141,32 @@ La red de la sesión sigue sin dejar abrir las páginas oficiales: se verificó 
 - **Pruebas de punta a punta**: `npm run recorrida` recorre la app en Chromium contra servidores de mentira (Supabase, Gemini, Groq, Ollama y el emisor de tokens de Azure, que hablan los protocolos reales) y una segunda vez sin ninguna clave. La voz se prueba con un proveedor de voz de mentira inyectado en la página.
 - **Tres variables solo para pruebas** (`GEMINI_BASE_URL`, `GROQ_BASE_URL`, `AZURE_SPEECH_TOKEN_URL`) apuntan los adaptadores a esos servidores. No se cargan en Vercel.
 
+## Claude como cerebro del Agente (pedido el 11/11/2026)
+
+**Cambio respecto de la especificación:** la regla de costo cero se reemplaza solo para Claude, el único proveedor pago autorizado, siempre con tope mensual. Gemini, Groq y Ollama quedan de respaldo.
+
+Verificado en la documentación oficial (platform.claude.com) el 11/11/2026: los identificadores `claude-haiku-5-5`, `claude-sonnet-5-5` y `claude-opus-5-5`; los precios (coinciden con los que pasaste, incluido el tramo de Haiku por encima de 100.000 tokens, que cuenta también lo leído y escrito del caché); el mínimo cacheable de 512 tokens para Haiku 5.5 y Sonnet 5.5; las duraciones de caché de 5 minutos y 1 hora; y la búsqueda hacia atrás de 20 bloques. No hizo falta cambiar ningún modelo.
+
+- **SDK oficial `@anthropic-ai/sdk` (1.8.0)**, API de Messages con streaming y herramientas, detrás de la misma interfaz de proveedor. El SDK manda la clave como `Authorization: Bearer` y la versión de API `2026-10-21` (no se usa ningún parámetro que esa versión quite).
+- **Sin reintentos del SDK** (`maxRetries: 0`) y 25 segundos para empezar a responder: si Claude falla, responde el siguiente proveedor enseguida en lugar de hacer esperar.
+- **Qué modelo responde se elige por el tipo de sesión**, no por el día ni el canal: todas las llamadas programadas usan el modelo de «Llamadas programadas» (Sonnet por defecto), incluidas las de otros días que no sean lunes ni viernes y las hechas por escrito. Un chat de voz iniciado por vos es chat (Haiku). Si querés que las llamadas diarias cortas usen Haiku, se cambia en Configuración.
+- **Lista cerrada de modelos:** Haiku 5.5, Sonnet 5.5 y Opus 5.5. Un valor fuera de la lista vuelve al de por defecto.
+- **Razonamiento:** Haiku va sin razonamiento extendido y con esfuerzo bajo (rápido y barato). Sonnet y Opus razonan con esfuerzo medio: es donde importa que el coach piense, aunque en voz agrega un poco de demora antes de hablar. Los bloques de razonamiento se devuelven tal cual dentro del turno y no se guardan: en los turnos siguientes la conversación viaja sin ellos (la API lo admite y así nunca choca con su control de historial editado).
+- **Caché de prompts.** La API arma el pedido como herramientas → sistema → mensajes, así que el orden quedó: herramientas, instrucciones y personalidad (punto de caché 1, que también guarda las herramientas), memorias y estado (punto 2), conversación (punto 3, en el último bloque). Tres de los cuatro puntos permitidos.
+- **La foto de memorias y estado se congela al empezar la sesión** y se reusa en cada turno; si no, cada cambio en el panel o el paso de un minuto invalidaría el caché. Lo que el Agente cambia durante la sesión lo sabe por la conversación, y para el estado actual tiene `ver_proyecto` y `ver_tarea`. La foto se rehace si la sesión pasa de una hora (un chat retomado más tarde). Esto vale para todos los proveedores.
+- **Duración del caché por canal:** 5 minutos en voz (los turnos van seguidos) y 1 hora por escrito (los mensajes están espaciados). Las tareas de fondo no usan caché: son un solo pedido.
+- **Cada pedido a Claude se registra** en la tabla `llm_usage` (modelo, uso, tokens de entrada, salida, escritura de caché de 5 min y 1 h, lectura, costo y mes). El costo se calcula una vez, con la tabla de `src/lib/agente/claude/precios.ts`, y se guarda. La tabla se escribe con tu sesión (RLS): no depende de la clave de servicio.
+- **El mes se cuenta en tu zona horaria** (`America/Montevideo`).
+- **Tope por defecto US$ 10**, configurable. Al 80 %: aviso en la app y notificación push, una vez por mes. Al llegar: Claude deja de usarse y el Agente dice una sola vez «Este mes ya usé todo el presupuesto de Claude; sigo con el modelo gratuito», como parte de su respuesta (también se escucha en voz).
+- **Una sesión que empezó con Claude se termina con Claude** aunque se llegue al tope en el medio, incluido su resumen de cierre. **Esto puede pasarse del tope por unos centavos.**
+- **Clave inválida o sin crédito:** se marca en tu perfil y Claude no se vuelve a probar por una hora (no en cada mensaje). Configuración lo avisa; «Probar conexión» borra la marca si anda. Se detecta tanto el error de facturación (402) como el 400 que la API devuelve al llegar al límite de gasto de la consola.
+- **Una negativa por seguridad** (`stop_reason: "refusal"`) pasa al siguiente proveedor. No se usa el parámetro de respaldo del servidor de Anthropic: el respaldo propio de la app (Gemini, Groq) ya cubre ese caso y mantiene el cálculo de costo simple.
+- **Las definiciones de herramientas no usan `eager_input_streaming`:** sus argumentos son cortos y se validan igual con zod antes de aplicarlos.
+- **Un orden de proveedores guardado antes de que existiera Claude** lo pone primero.
+- **«Probar conexión»** usa Haiku con 16 tokens de salida; también queda registrado (cuesta menos de una milésima de centavo).
+
 ## Despliegue
 
 - **Proyecto de Vercel `miagente`** (equipo MiAgente), enlazado a `miagente681-cloud/Agente`. El repo estaba vacío: el código de la fase 1 se trajo desde `Emontone21/MiAg` con su historial.
 - **La rama de producción de Vercel sigue siendo `claude/pensive-galileo-w7i9nk`** porque fue la primera que se subió. `main` ya existe con el mismo código; el cambio de rama de producción queda como paso manual en `CREDENCIALES.md`, para no arriesgar el despliegue en uso.
-- **Migraciones 0002 y 0003 aplicadas en el proyecto real** de Supabase (solo agregan columnas, una función, un índice y el trabajo del cron).
+- **Migraciones 0002, 0003 y 0004 aplicadas en el proyecto real** de Supabase (solo agregan columnas, una función, un índice y el trabajo del cron).

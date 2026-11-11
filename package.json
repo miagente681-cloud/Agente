@@ -9,9 +9,10 @@
     "lint": "eslint",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "recorrida": "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=clave-falsa next build && node tests/recorrida/recorrer.cjs && node tests/recorrida/sin-claves.cjs"
+    "recorrida": "NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=clave-falsa next build && node tests/recorrida/recorrer.cjs && node tests/recorrida/sin-claves.cjs && node tests/recorrida/claude.cjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",

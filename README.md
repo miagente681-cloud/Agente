@@ -7,7 +7,7 @@ Estado: **las 7 fases construidas.** Falta cargar las credenciales (ver [CREDENC
 Qué hay:
 
 - **Panel**: áreas, proyectos, tareas y subtareas en cuatro vistas (Hoy / Esta semana, Tablero, Calendario, Ficha de proyecto), con filtro, alta en una línea, paleta de comandos y atajos.
-- **Agente por chat**: actualiza el panel con herramientas; cada cambio se ve como tarjeta y se puede deshacer. Gemini, con Groq de respaldo y un modelo local opcional.
+- **Agente por chat**: actualiza el panel con herramientas; cada cambio se ve como tarjeta y se puede deshacer. Claude (pago, con tope mensual) como cerebro principal, con Gemini, Groq y un modelo local de respaldo.
 - **Memoria**: entrevista inicial, aprendizaje al cerrar cada sesión y la pantalla «Lo que sé de vos».
 - **Voz**: llamadas del Agente y chat de voz cuando quieras, con Azure Speech o la voz del navegador, con interrupciones y contador de uso. Siempre se puede escribir: el Agente responde hablando.
 - **Llamadas programadas**: rutinas, disponibilidad, notificaciones push y reprogramación automática.
@@ -79,7 +79,7 @@ Pruebas unitarias: esquema y RLS en un Postgres en memoria, fechas, herramientas
 npm run recorrida
 ```
 
-Recorre la app en Chromium (escritorio y celular) contra servidores de mentira, y una segunda vez sin ninguna clave. Necesita Playwright instalado en la máquina. Compila con variables de prueba: antes de desplegar a mano, volvé a compilar con las reales.
+Recorre la app en Chromium (escritorio y celular) contra servidores de mentira, una segunda vez sin ninguna clave y una tercera con Claude (un Claude de mentira que habla el protocolo de Anthropic y simula el caché). Necesita Playwright instalado en la máquina. Compila con variables de prueba: antes de desplegar a mano, volvé a compilar con las reales.
 
 ## Video promocional
 
@@ -130,6 +130,7 @@ src/app/api/            agent/turn (SSE), sesiones/[id]/cerrar, voice/token, voi
                         cron/tick, push/probar, cuenta/borrar, estado
 src/app/configurar/     Estado de las integraciones
 src/lib/agente/         Motor del Agente: proveedores, herramientas, contexto, cierre, deshacer
+src/lib/agente/claude/  Claude: precios, modelo de cada uso, presupuesto mensual
 src/lib/voz/            Proveedores de voz (Azure, navegador), control de la llamada, cupo
 src/lib/programacion/   Lógica de horarios (pura) y el programador
 src/lib/push/           Notificaciones push (navegador y servidor)

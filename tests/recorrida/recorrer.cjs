@@ -386,10 +386,10 @@ async function main() {
     await pagina.getByText("Cerebro del Agente").waitFor();
     await pagina.getByRole("button", { name: "Subir Groq" }).click();
     await pagina.waitForTimeout(300);
-    afirmar((await estado()).profiles[0].agent_config.orden_proveedores[0] === "groq", "el orden de proveedores se guarda en el perfil");
+    afirmar((await estado()).profiles[0].agent_config.orden_proveedores.join() === "claude,groq,gemini,ollama", "el orden de proveedores se guarda en el perfil");
     await pagina.getByRole("button", { name: "Bajar Groq" }).click();
     await pagina.goto(BASE + "/configurar");
-    await pagina.getByText("Gemini (cerebro principal del Agente)").waitFor();
+    await pagina.getByText("Gemini (cerebro gratuito)").waitFor();
     afirmar((await pagina.getByText("Pendiente", { exact: true }).count()) > 0 && (await pagina.getByText("Configurada", { exact: true }).count()) >= 3,
       "/configurar lista cada integración como configurada o pendiente");
     afirmar(!(await pagina.content()).includes("clave-falsa"), "/configurar no muestra ningún valor");

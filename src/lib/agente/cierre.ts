@@ -122,6 +122,7 @@ export async function cerrarSesion(p: {
 
   const respuesta = await completar(p.proveedores, {
     liviano: true,
+    uso: "fondo",
     sistema: INSTRUCCIONES,
     mensajes: [{ rol: "usuario", texto: entrada }],
   });

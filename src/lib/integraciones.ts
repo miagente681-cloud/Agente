@@ -34,8 +34,16 @@ export function integraciones(): Integracion[] {
       variables: ["SUPABASE_SERVICE_ROLE_KEY"],
     },
     {
+      id: "claude",
+      nombre: "Claude (cerebro principal, pago con tope)",
+      configurada: tiene("ANTHROPIC_API_KEY"),
+      paraQue: "Chat y llamadas con Claude, con un tope de gasto mensual. Sin esto el Agente usa los modelos gratuitos.",
+      variables: ["ANTHROPIC_API_KEY"],
+      opcional: true,
+    },
+    {
       id: "gemini",
-      nombre: "Gemini (cerebro principal del Agente)",
+      nombre: "Gemini (cerebro gratuito)",
       configurada: tiene("GEMINI_API_KEY"),
       paraQue: "Chat y llamadas con el Agente.",
       variables: ["GEMINI_API_KEY", "GEMINI_MODEL_CHAT", "GEMINI_MODEL_FONDO"],

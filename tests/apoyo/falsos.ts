@@ -54,7 +54,7 @@ export function proveedorFalso(id: string, pasos: Paso[]): ProveedorLLM & { pedi
   return {
     id,
     pedidos,
-    modelo: (liviano) => `${id}-${liviano ? "liviano" : "prueba"}`,
+    modelo: (uso) => `${id}-${uso === "fondo" ? "liviano" : "prueba"}`,
     async *generar(pedido: PedidoLLM): AsyncGenerator<Trozo> {
       // Se copia el historial: el motor lo sigue modificando después.
       pedidos.push({ ...pedido, mensajes: structuredClone(pedido.mensajes) });

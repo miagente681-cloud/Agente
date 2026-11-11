@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type Keyboard
 import { TarjetaCambio, type CambioVista } from "@/components/agente/tarjeta-cambio";
 import { Boton } from "@/components/ui/boton";
 import { EncabezadoPagina } from "@/components/ui/varios";
-import { estadoApp, fraseCambioProveedor, pedirTurno, type EstadoApp, type PedidoTurno } from "@/lib/agente/cliente";
+import { estadoApp, fraseCambioProveedor, nombreModelo, pedirTurno, type EstadoApp, type PedidoTurno } from "@/lib/agente/cliente";
 import { useDatos } from "@/lib/datos/almacen";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
@@ -17,6 +17,8 @@ type Item = {
   texto: string;
   cambios: CambioVista[];
   nota?: string;
+  /** Quién respondió, por ejemplo «Claude Haiku 5.5». */
+  modelo?: string;
   error?: string;
   escribiendo?: boolean;
 };
@@ -63,6 +65,8 @@ export function Chat() {
         if (e.tipo === "sesion") setSesion((s) => s ?? { id: e.id, kind: pedido.tipo ?? "chat" });
         else if (e.tipo === "texto") editar(idAgente, (i) => ({ ...i, texto: i.texto + e.texto }));
         else if (e.tipo === "reiniciar") editar(idAgente, (i) => ({ ...i, texto: "" }));
+        else if (e.tipo === "proveedor") editar(idAgente, (i) => ({ ...i, modelo: nombreModelo(e.id, e.modelo) }));
+        else if (e.tipo === "aviso") editar(idAgente, (i) => ({ ...i, nota: e.mensaje }));
         else if (e.tipo === "cambio") {
           huboCambios = true;
           editar(idAgente, (i) => ({ ...i, cambios: [...i.cambios, e.cambio] }));
@@ -94,7 +98,7 @@ export function Chat() {
 
       if (abierta) {
         const [mensajes, cambios] = await Promise.all([
-          sb.from("messages").select("id,role,content,created_at").eq("session_id", abierta.id).in("role", ["usuario", "agente"]).order("created_at").limit(300),
+          sb.from("messages").select("id,role,content,created_at,provider,model").eq("session_id", abierta.id).in("role", ["usuario", "agente"]).order("created_at").limit(300),
           sb.from("change_log").select("id,message_id,operation,summary,undone_at").eq("session_id", abierta.id).order("created_at"),
         ]);
         if (!vigente) return;
@@ -112,8 +116,14 @@ export function Chat() {
           porMensaje.set(c.message_id ?? "", [...(porMensaje.get(c.message_id ?? "") ?? []), c]);
         }
         setItems(
-          ((mensajes.data ?? []) as { id: string; role: "usuario" | "agente"; content: string | null }[])
-            .map((m) => ({ id: m.id, rol: m.role, texto: m.content ?? "", cambios: porMensaje.get(m.id) ?? [] }))
+          ((mensajes.data ?? []) as { id: string; role: "usuario" | "agente"; content: string | null; provider: string | null; model: string | null }[])
+            .map((m) => ({
+              id: m.id,
+              rol: m.role,
+              texto: m.content ?? "",
+              cambios: porMensaje.get(m.id) ?? [],
+              modelo: m.role === "agente" && m.provider ? nombreModelo(m.provider, m.model) : undefined,
+            }))
             .filter((i) => i.texto || i.cambios.length),
         );
         setSesion({ id: abierta.id, kind: abierta.kind });
@@ -249,6 +259,9 @@ export function Chat() {
                 <p role="alert" className="rounded-md border border-peligro/30 bg-peligro-suave px-3 py-2 text-sm text-peligro">
                   {i.error}
                 </p>
+              ) : null}
+              {i.modelo && !i.escribiendo && (i.texto || i.cambios.length) ? (
+                <p className="text-[11px] text-texto-3">{i.modelo}</p>
               ) : null}
             </div>
           ),

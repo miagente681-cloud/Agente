@@ -41,6 +41,9 @@ export type Sesion = {
   history_summary_until: string | null;
   target_minutes: number | null;
   focus: string | null;
+  /** Memorias y estado congelados al empezar la sesión (ver runner). */
+  context_snapshot?: string | null;
+  context_snapshot_at?: string | null;
   created_at: string;
 };
 

@@ -71,22 +71,25 @@ function peso(t: Tarea, hoy: string): number {
   return 5 + t.priority / 10;
 }
 
-export function armarSistema(p: {
-  datos: Instantanea;
-  sesion: Sesion;
-  voz: boolean;
-  ahora: Date;
-}): string {
-  const { datos, sesion, ahora } = p;
+/**
+ * Lo estable del contexto: personalidad, reglas y modo de la sesión. No
+ * cambia entre turnos de una misma sesión (es lo primero del caché de Claude).
+ */
+export function armarEstable(sesion: Sesion, voz: boolean): string {
+  return [PERSONALIDAD, REGLAS, modo(sesion, voz)].join("\n\n");
+}
+
+/**
+ * Lo que el Agente sabe al empezar la sesión: memorias y estado de proyectos y
+ * tareas. Se congela al principio de la sesión (ver runner) para que el
+ * principio del pedido no cambie entre turnos.
+ */
+export function armarFoto(p: { datos: Instantanea; sesion: Pick<Sesion, "kind">; ahora: Date }): string {
+  const { datos, ahora } = p;
   const zona = datos.perfil.timezone;
   const local = partesEnZona(ahora, zona);
   const hoy = local.fecha;
-  const bloques: string[] = [PERSONALIDAD, REGLAS, modo(sesion, p.voz)];
-
-  bloques.push(
-    `Ahora: ${fechaLarga(hoy)} de ${hoy.slice(0, 4)}, ${local.hora} (${hoy}).` +
-      (datos.perfil.name ? ` La persona se llama ${datos.perfil.name}.` : ""),
-  );
+  const bloques: string[] = [];
 
   if (datos.memorias.length) {
     bloques.push(
@@ -98,6 +101,11 @@ export function armarSistema(p: {
     );
   }
 
+  bloques.push(
+    `Estado al empezar esta sesión: ${fechaLarga(hoy)} de ${hoy.slice(0, 4)}, ${local.hora} (${hoy}).` +
+      (datos.perfil.name ? ` La persona se llama ${datos.perfil.name}.` : "") +
+      " Lo que cambie durante la sesión está en la conversación; para ver el estado actual de algo usá ver_proyecto o ver_tarea.",
+  );
   const activos = datos.proyectos.filter((x) => x.status === "activo");
   const nombreProyecto = new Map(datos.proyectos.map((x) => [x.id, x.name]));
   const areaDe = new Map(datos.areas.map((a) => [a.id, a.name]));
@@ -135,7 +143,7 @@ export function armarSistema(p: {
             : ""),
       );
     }
-  } else if (sesion.kind !== "onboarding") {
+  } else if (p.sesion.kind !== "onboarding") {
     bloques.push("Todavía no hay proyectos cargados. Ayudá a crear el primero.");
   }
 
@@ -168,7 +176,7 @@ export function armarSistema(p: {
       );
     }
   }
-  if (perdidas.length && sesion.kind === "llamada_programada") {
+  if (perdidas.length && p.sesion.kind === "llamada_programada") {
     bloques.push("La llamada anterior se perdió: retomá también los temas que quedaron de esa.");
   }
 
@@ -184,6 +192,13 @@ export function armarSistema(p: {
     bloques.push("No hay otra llamada programada para hoy; la próxima sale de las rutinas.");
   }
 
-  if (sesion.history_summary) bloques.push("Resumen de lo ya conversado en esta sesión:\n" + sesion.history_summary);
   return bloques.join("\n\n");
+}
+
+export const armarResumen = (sesion: Sesion) =>
+  sesion.history_summary ? "Resumen de lo ya conversado en esta sesión:\n" + sesion.history_summary : "";
+
+/** Todo junto, como lo reciben los proveedores que no tienen caché por partes. */
+export function armarSistema(p: { datos: Instantanea; sesion: Sesion; voz: boolean; ahora: Date }): string {
+  return [armarEstable(p.sesion, p.voz), armarFoto(p), armarResumen(p.sesion)].filter(Boolean).join("\n\n");
 }

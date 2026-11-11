@@ -13,7 +13,7 @@ const BETO = "22222222-2222-2222-2222-222222222222";
 const TABLAS = [
   "profiles", "areas", "projects", "tasks", "call_routines", "availability_windows",
   "sessions", "messages", "project_log", "memories", "change_log",
-  "push_subscriptions", "voice_usage",
+  "push_subscriptions", "voice_usage", "llm_usage",
 ];
 
 let db: PGlite;

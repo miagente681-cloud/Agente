@@ -7,8 +7,10 @@ import { Etiqueta, Tarjeta } from "@/components/ui/varios";
 import { estadoApp, type EstadoApp } from "@/lib/agente/cliente";
 import { useDatos } from "@/lib/datos/almacen";
 import { usePerfil } from "@/lib/datos/perfil";
+import { ConfigClaude } from "./claude";
 
 const PROVEEDORES: { id: string; nombre: string; detalle: string }[] = [
+  { id: "claude", nombre: "Claude", detalle: "API de Anthropic. Pago, con tope mensual." },
   { id: "gemini", nombre: "Gemini", detalle: "Google, nivel gratuito." },
   { id: "groq", nombre: "Groq", detalle: "Plan gratuito. Más rápido, con un cupo por minuto chico." },
   { id: "ollama", nombre: "Modelo local (Ollama)", detalle: "En tu computadora: sin límites y sin que los datos salgan de ella. Solo responde si está prendida." },
@@ -31,7 +33,9 @@ export function ConfigAgente() {
   const guardado = Array.isArray(perfil?.agent_config.orden_proveedores)
     ? (perfil.agent_config.orden_proveedores as string[])
     : [];
-  const orden = [...new Set([...guardado, ...PROVEEDORES.map((p) => p.id)])].filter((id) =>
+  // Como en el servidor: un orden guardado antes de que existiera Claude lo pone primero.
+  const conClaude = guardado.length && !guardado.includes("claude") ? ["claude", ...guardado] : guardado;
+  const orden = [...new Set([...conClaude, ...PROVEEDORES.map((p) => p.id)])].filter((id) =>
     PROVEEDORES.some((p) => p.id === id),
   );
   const configurados = new Set(estado?.proveedores.map((p) => p.id));
@@ -100,6 +104,7 @@ export function ConfigAgente() {
           </Link>
         </p>
       ) : null}
+      <ConfigClaude />
       <div className="mt-4 rounded-md border border-borde bg-fondo px-3 py-2.5 text-[13px] text-texto-2">
         <p className="font-medium text-texto">Privacidad</p>
         <p className="mt-1">

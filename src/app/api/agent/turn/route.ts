@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import type { Sesion } from "@/lib/agente/datos";
-import { proveedoresEnOrden } from "@/lib/agente/proveedores/indice";
+import { prepararProveedores } from "@/lib/agente/claude/servidor";
 import { correrTurno, resumirSiHaceFalta } from "@/lib/agente/runner";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer, usuarioActual } from "@/lib/supabase/server";
@@ -57,9 +57,10 @@ export async function POST(request: NextRequest) {
     if (!sesion) return NextResponse.json({ error: "No se pudo crear la sesión" }, { status: 500 });
   }
 
-  const { data: perfil } = await sb.from("profiles").select("agent_config").maybeSingle();
-  const config = (perfil?.agent_config ?? {}) as Record<string, unknown>;
-  const proveedores = proveedoresEnOrden(config.orden_proveedores);
+  const { proveedores, avisoTope } = await prepararProveedores(sb, {
+    sesionId: sesion.id,
+    sesionYaUsoClaude: (sesion.providers_used ?? []).includes("claude"),
+  });
   const laSesion = sesion;
 
   const codificador = new TextEncoder();
@@ -74,6 +75,7 @@ export async function POST(request: NextRequest) {
           sesion: laSesion,
           proveedores,
           entrada: { texto: cuerpo.texto, inicio: cuerpo.inicio },
+          avisoTope: avisoTope ?? undefined,
           voz: laSesion.channel === "voz" || Boolean(cuerpo.voz),
           senal: request.signal,
         });

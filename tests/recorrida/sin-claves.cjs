@@ -50,8 +50,8 @@ async function main() {
     console.log("Sin claves opcionales");
     await pagina.goto(BASE + "/configurar");
     await pagina.getByText("Estado de las integraciones").waitFor();
-    afirmar((await pagina.getByText("Pendiente", { exact: true }).count()) === 5 && (await pagina.getByText("Pendiente (opcional)").count()) === 2,
-      "/configurar muestra como pendientes Gemini, Groq, servicio, push y cron; Ollama y Azure como opcionales");
+    afirmar((await pagina.getByText("Pendiente", { exact: true }).count()) === 5 && (await pagina.getByText("Pendiente (opcional)").count()) === 3,
+      "/configurar muestra como pendientes Gemini, Groq, servicio, push y cron; Claude, Ollama y Azure como opcionales");
 
     await pagina.goto(BASE + "/chat");
     await pagina.getByText("Falta configurar el cerebro del Agente.").waitFor();

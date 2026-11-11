@@ -4,13 +4,40 @@ Todo se carga como variable de entorno. **En Vercel:** proyecto `miagente` → S
 
 Para ver qué falta en cualquier momento: entrá a la app → Configuración → **Estado de las integraciones** (`/configurar`). Muestra cada integración como configurada o pendiente y nunca muestra valores.
 
-Ninguna clave va en el código ni se pega en un chat. Todo lo de esta lista es gratuito y no requiere activar facturación, con una salvedad en Azure (paso 7).
+Ninguna clave va en el código ni se pega en un chat. Todo lo de esta lista es gratuito y no requiere activar facturación, salvo Claude (paso 1), que es el único proveedor pago autorizado y funciona con un tope de gasto mensual. Azure pide una tarjeta para verificar identidad aunque su nivel gratuito no cobra (paso 9).
 
 El orden está pensado para que cada paso destrabe algo que se pueda probar.
 
 ---
 
-## 1. Supabase, clave pública — para poder entrar
+## 1. Claude (API de Anthropic) — el cerebro principal, con tope de gasto
+
+| | |
+|---|---|
+| Variable | `ANTHROPIC_API_KEY` |
+| Para qué | Que el Agente responda con Claude: Haiku 5.5 en el chat y las tareas de fondo, Sonnet 5.5 en las llamadas programadas y la entrevista inicial. Sin esta clave, el Agente usa Gemini, Groq u Ollama como hasta ahora. |
+| Dónde se carga | Vercel, en *Production* y *Preview*, tipo **Secret** (sensible). Nunca con `NEXT_PUBLIC_`. |
+| Costo | Es el único proveedor pago. La app corta en **US$ 10 por mes** (se cambia en Configuración) y avisa al 80 %. Además conviene poner un límite en la consola (punto 4 de abajo). |
+
+**Paso a paso** (verificado en la documentación oficial el 11/11/2026):
+
+1. **Cuenta.** Entrá a platform.claude.com y creá una cuenta de la Claude Console, o iniciá sesión.
+2. **Crédito.** En la consola, Settings → **Billing** (`platform.claude.com/settings/billing`), cargá crédito. Con US$ 5 o 10 alcanza para empezar: el chat con Haiku cuesta fracciones de centavo por mensaje.
+3. **Clave.** Settings → **API keys** (`platform.claude.com/settings/keys`) → *Create key*. Ponele un nombre (por ejemplo «MiAgente») y copiala: se muestra una sola vez. Empieza con `sk-ant-`.
+4. **Límite de gasto en la consola** (recomendado, como segunda barrera además del tope de la app). En la misma página **Billing**, sección **Spend limits**, tocá *Set limit* (o *Adjust limit* si ya hay uno) y poné un monto mensual, por ejemplo US$ 15. Cuando se alcanza, la API responde con un error y la app pasa sola a los modelos gratuitos.
+5. **Vercel.** Proyecto `miagente` → Settings → Environment Variables → *Add*: nombre `ANTHROPIC_API_KEY`, tipo **Secret**, marcá *Production* y *Preview*, pegá la clave y guardá.
+6. **Volver a desplegar.** Deployments → ⋯ del último → *Redeploy*.
+
+**Cómo comprobar que quedó bien (dos minutos):**
+
+1. Configuración → **Cerebro del Agente**: Claude tiene que figurar «Configurado» y primero en la lista.
+2. Tocá **Probar conexión**: tiene que decir «Anda: respondió Claude Haiku 5.5 en … ms». Si dice que la clave no es válida, revisá que la copiaste entera; si dice que no hay crédito, cargá crédito o subí el límite de la consola.
+3. Escribile algo al Agente. Debajo de la respuesta tiene que aparecer **Claude Haiku 5.5**.
+4. Volvé a Configuración: en **Gasto de este mes** tiene que aparecer el gasto (será de fracciones de centavo), con el desglose por uso y por modelo.
+
+El gasto que muestra la app es una estimación hecha con los precios publicados. El gasto real está en la consola de Claude.
+
+## 2. Supabase, clave pública — para poder entrar
 
 | | |
 |---|---|
@@ -21,7 +48,7 @@ El orden está pensado para que cada paso destrabe algo que se pueda probar.
 | Destraba | Ingreso, panel completo (Hoy, Tablero, Calendario, Proyectos). |
 | Cómo comprobar | Redesplegá y abrí la app: tiene que aparecer la pantalla de ingreso en lugar de «Falta conectar la base de datos». |
 
-## 2. Supabase, clave de servicio
+## 3. Supabase, clave de servicio
 
 | | |
 |---|---|
@@ -32,7 +59,7 @@ El orden está pensado para que cada paso destrabe algo que se pueda probar.
 | Destraba | Pasos 7, 8 y 9. |
 | Cómo comprobar | `/configurar` → «Supabase, clave de servicio: Configurada». |
 
-## 3. Correo con código (Brevo) — para entrar desde el iPhone
+## 4. Correo con código (Brevo) — para entrar desde el iPhone
 
 Sin esto el correo trae solo el enlace (que en iPhone abre Safari y no la app instalada), solo llega a miembros del proyecto de Supabase y hay un tope de 2 por hora.
 
@@ -43,7 +70,7 @@ Sin esto el correo trae solo el enlace (que en iPhone abre Safari y no la app in
 
 No hay variable para cargar en Vercel. **Cómo comprobar:** pedí el acceso desde la app; el correo tiene que traer un código de 6 dígitos y el código tiene que dejarte entrar.
 
-## 4. Gemini — el cerebro principal
+## 5. Gemini — el cerebro gratuito
 
 | | |
 |---|---|
@@ -56,7 +83,7 @@ No hay variable para cargar en Vercel. **Cómo comprobar:** pedí el acceso desd
 
 Ojo con el cupo: según reportes (no oficiales) los modelos Flash gratuitos tienen muy pocos pedidos por día. Por eso conviene cargar también Groq.
 
-## 5. Groq — el respaldo
+## 6. Groq — el respaldo
 
 | | |
 |---|---|
@@ -66,7 +93,7 @@ Ojo con el cupo: según reportes (no oficiales) los modelos Flash gratuitos tien
 | Destraba | Que la conversación siga sola cuando Gemini llega a su límite. |
 | Cómo comprobar | «Groq: Configurado». Para verlo actuar, en Configuración subí Groq al primer lugar y hablá con el Agente; en el detalle de la sesión dice «Respondió Groq». |
 
-## 6. Notificaciones push (claves VAPID) — se generan, no se piden
+## 7. Notificaciones push (claves VAPID) — se generan, no se piden
 
 En cualquier computadora con Node:
 
@@ -84,7 +111,7 @@ Imprime una *Public Key* y una *Private Key*.
 
 **Destraba:** el aviso en el celular a la hora de la llamada. **Cómo comprobar:** redesplegá; en el celular (en iPhone, con la app instalada en la pantalla de inicio) Configuración → Notificaciones → Activar → «Enviar una de prueba». Si cambiás las claves más adelante, cada dispositivo tiene que desactivar y volver a activar.
 
-## 7. Programador de llamadas (secreto del cron) — se genera
+## 8. Programador de llamadas (secreto del cron) — se genera
 
 ```bash
 openssl rand -hex 32
@@ -100,9 +127,9 @@ select vault.create_secret('EL-MISMO-VALOR-DE-CRON_SECRET', 'miagente_cron_secre
 
 El trabajo que corre cada minuto ya está creado y funcionando en tu proyecto (lo verifiqué); mientras falten esos dos valores no hace nada. Para cambiarlos más adelante: `select vault.update_secret((select id from vault.secrets where name = 'miagente_cron_secret'), 'NUEVO-VALOR');`
 
-**Destraba:** que las llamadas de tus rutinas se disparen y se reprogramen solas. **Cómo comprobar:** creá una rutina para dentro de 3 minutos (Configuración → Rutinas de llamada) y esperá: tiene que aparecer el aviso «Tu Agente te está llamando» en la app y, si hiciste el paso 6, la notificación. Para ver las respuestas del servidor: `select status_code, content from net._http_response order by created desc limit 5;` (200 = bien, 401 = el secreto no coincide, 503 = falta `CRON_SECRET` o la clave de servicio en Vercel).
+**Destraba:** que las llamadas de tus rutinas se disparen y se reprogramen solas. **Cómo comprobar:** creá una rutina para dentro de 3 minutos (Configuración → Rutinas de llamada) y esperá: tiene que aparecer el aviso «Tu Agente te está llamando» en la app y, si hiciste el paso 7, la notificación. Para ver las respuestas del servidor: `select status_code, content from net._http_response order by created desc limit 5;` (200 = bien, 401 = el secreto no coincide, 503 = falta `CRON_SECRET` o la clave de servicio en Vercel).
 
-## 8. Azure Speech — opcional
+## 9. Azure Speech — opcional
 
 Sin esto las llamadas funcionan igual con el reconocimiento y la voz del navegador. Azure suena mejor y anda en más navegadores.
 
@@ -116,9 +143,9 @@ Sin esto las llamadas funcionan igual con el reconocimiento y la voz del navegad
 | `AZURE_SPEECH_KEY` | KEY 1 | Vercel, Sensitive |
 | `AZURE_SPEECH_REGION` | por ejemplo `brazilsouth` | Vercel |
 
-Necesita además el paso 2. **Cómo comprobar:** Configuración → Voz → «Azure configurado» y las barras de uso del mes. En una llamada, arriba a la derecha dice «Voz: Azure».
+Necesita además el paso 3. **Cómo comprobar:** Configuración → Voz → «Azure configurado» y las barras de uso del mes. En una llamada, arriba a la derecha dice «Voz: Azure».
 
-## 9. Modelo local con Ollama — opcional
+## 10. Modelo local con Ollama — opcional
 
 Sirve para no depender de cupos y para que los datos no salgan de tu computadora. Solo responde con la computadora prendida; si no contesta en 6 segundos se pasa al siguiente proveedor.
 
@@ -154,7 +181,7 @@ Los tres admiten herramientas. No encontré mediciones de calidad en español: p
 
 **Cómo comprobar:** «Modelo local: Configurado»; subilo al primer lugar y hablá con el Agente. Apagá la computadora y volvé a hablar: tiene que responder otro proveedor sin que hagas nada. Este camino no lo pude probar con un Ollama real.
 
-## 10. Después de cargar todo
+## 11. Después de cargar todo
 
 - **Pasar la producción a `main`.** Vercel → Settings → Environments → Production → Branch Tracking → `main`. La rama `main` ya existe con el mismo código. No lo cambié yo para no arriesgar el despliegue en uso.
 - **URL de la app en Supabase Auth.** Ya está: `site_url` y las redirecciones apuntan a `miagente-mi-agente1.vercel.app` y `miagente-zeta.vercel.app`. Si usás otro dominio, agregalo en Authentication → URL Configuration.

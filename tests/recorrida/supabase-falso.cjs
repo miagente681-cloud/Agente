@@ -30,7 +30,7 @@ function cookieDeSesion() {
 
 const TABLAS = [
   "profiles", "areas", "projects", "tasks", "call_routines", "availability_windows", "sessions",
-  "messages", "project_log", "memories", "change_log", "push_subscriptions", "voice_usage",
+  "messages", "project_log", "memories", "change_log", "push_subscriptions", "voice_usage", "llm_usage",
 ];
 
 function crearServidor() {
@@ -53,6 +53,7 @@ function crearServidor() {
     project_log: () => ({ kind: "nota", author: "usuario", session_id: null }),
     memories: () => ({ source_session_id: null, edited_by_user: false, archived_at: null }),
     change_log: () => ({ session_id: null, message_id: null, old_values: null, new_values: null, undone_at: null }),
+    llm_usage: () => ({ session_id: null, provider: "claude", input_tokens: 0, output_tokens: 0, cache_write_5m_tokens: 0, cache_write_1h_tokens: 0, cache_read_tokens: 0, cost_usd: 0 }),
   };
   const completar = (tabla, fila) => {
     const base = { ...(tabla === "voice_usage" || tabla === "profiles" ? {} : { id: randomUUID() }), user_id: USUARIO.id, created_at: ahora(), updated_at: ahora() };

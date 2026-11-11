@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { partesEnZona } from "@/lib/programacion/horarios";
-import { armarSistema } from "./contexto";
+import { usoDeSesion } from "./claude/config";
+import { armarEstable, armarFoto, armarResumen } from "./contexto";
 import { leerInstantanea, type Instantanea, type Sesion } from "./datos";
 import {
   definiciones,
@@ -16,6 +17,7 @@ import {
   type MensajeLLM,
   type PedidoLLM,
   type ProveedorLLM,
+  usoDe,
 } from "./tipos";
 
 /**
@@ -33,8 +35,12 @@ export type EventoTurno =
   | { tipo: "proveedor"; id: string; modelo: string }
   | { tipo: "cambio_proveedor"; de: string; motivo: ClaseError }
   | { tipo: "error"; mensaje: string }
+  /** Algo que la persona tiene que saber, sin ser un error (presupuesto de Claude). */
+  | { tipo: "aviso"; mensaje: string }
   | { tipo: "fin"; texto: string; proveedor: string | null };
 
+/** Pasado este tiempo, la foto de memorias y estado de una sesión se vuelve a armar. */
+const VIGENCIA_FOTO_MS = 60 * 60_000;
 /** Tope de idas y vueltas con el modelo en un turno (cada una gasta cupo). */
 const MAX_PASOS = 6;
 const MAX_MENSAJES_HISTORIAL = 40;
@@ -75,6 +81,11 @@ export async function* correrTurno(p: {
   ahora?: Date;
   datos?: Instantanea;
   senal?: AbortSignal;
+  /**
+   * Se dice una sola vez al llegar al tope de gasto de Claude. Va como parte de
+   * la respuesta (también se escucha en voz), antes de lo que conteste el modelo.
+   */
+  avisoTope?: string;
 }): AsyncGenerator<EventoTurno> {
   const { sb, sesion } = p;
   const ahora = p.ahora ?? new Date();
@@ -132,7 +143,28 @@ export async function* correrTurno(p: {
     return;
   }
 
-  const sistema = armarSistema({ datos, sesion, voz: Boolean(p.voz), ahora });
+  // Lo que el Agente sabe se congela al empezar la sesión: así el principio del
+  // pedido es idéntico en cada turno y Claude lo lee del caché. Se rehace si la
+  // sesión lleva más de una hora (un chat retomado más tarde).
+  const vencida =
+    !sesion.context_snapshot_at || ahora.getTime() - new Date(sesion.context_snapshot_at).getTime() > VIGENCIA_FOTO_MS;
+  if (!sesion.context_snapshot || vencida) {
+    const foto = { context_snapshot: armarFoto({ datos, sesion, ahora }), context_snapshot_at: ahora.toISOString() };
+    await sb.from("sessions").update(foto).eq("id", sesion.id);
+    Object.assign(sesion, foto);
+  }
+  const voz = Boolean(p.voz);
+  const uso = usoDeSesion(sesion.kind);
+  let textoAviso = "";
+  if (p.avisoTope) {
+    // Se guarda como mensaje del Agente para que quede en la transcripción,
+    // pero no entra en el pedido de este turno (no puede ser lo último).
+    await guardar({ role: "agente", content: p.avisoTope });
+    textoAviso = p.avisoTope + "\n\n";
+    yield { tipo: "texto", texto: textoAviso };
+  }
+  const sistemaPartes = [armarEstable(sesion, voz), [sesion.context_snapshot, armarResumen(sesion)].filter(Boolean).join("\n\n")];
+  const sistema = sistemaPartes.join("\n\n");
   const herramientas = definiciones();
   const libres = p.proveedores.filter((x) => (enPausa.get(x.id) ?? 0) < Date.now());
   // Si todos están en pausa se prueba igual: peor es no intentar.
@@ -157,26 +189,27 @@ export async function* correrTurno(p: {
     }
     if (anunciado !== prov.id) {
       anunciado = prov.id;
-      yield { tipo: "proveedor", id: prov.id, modelo: prov.modelo() };
+      yield { tipo: "proveedor", id: prov.id, modelo: prov.modelo(uso) };
     }
 
     let texto = "";
     const llamadas: LlamadaHerramienta[] = [];
-    let uso = { entrada: 0, salida: 0 };
+    let tokens = { entrada: 0, salida: 0 };
     try {
-      for await (const t of prov.generar({ sistema, mensajes: historial, herramientas, senal: p.senal })) {
+      for await (const t of prov.generar({ sistema, sistemaPartes, mensajes: historial, herramientas, senal: p.senal, uso, voz })) {
         if (t.tipo === "texto") {
           texto += t.texto;
           yield { tipo: "texto", texto: t.texto };
         } else if (t.tipo === "llamada") llamadas.push(t.llamada);
-        else uso = { entrada: t.entrada, salida: t.salida };
+        else if (t.tipo === "aviso") yield { tipo: "aviso", mensaje: t.mensaje };
+        else tokens = { entrada: t.entrada, salida: t.salida };
       }
     } catch (error) {
       if (p.senal?.aborted) throw error;
       const clase: ClaseError = error instanceof ErrorProveedor ? error.clase : "otro";
       // Queda en los registros del servidor para poder diagnosticar (modelo mal
       // escrito, cupo, clave inválida). El mensaje del proveedor no trae claves.
-      console.warn(`[agente] ${prov.id} (${prov.modelo()}) falló: ${clase}. ${error instanceof Error ? error.message : ""}`);
+      console.warn(`[agente] ${prov.id} (${prov.modelo(uso)}) falló: ${clase}. ${error instanceof Error ? error.message : ""}`);
       if (clase === "limite") enPausa.set(prov.id, Date.now() + PAUSA_POR_LIMITE_MS);
       cola.shift();
       if (texto) yield { tipo: "reiniciar" };
@@ -184,7 +217,7 @@ export async function* correrTurno(p: {
       continue;
     }
 
-    const datosModelo = { provider: prov.id, model: prov.modelo(), tokens_in: uso.entrada, tokens_out: uso.salida };
+    const datosModelo = { provider: prov.id, model: prov.modelo(uso), tokens_in: tokens.entrada, tokens_out: tokens.salida };
 
     if (!llamadas.length) {
       await guardar({ role: "agente", content: texto, ...datosModelo });
@@ -229,7 +262,9 @@ export async function* correrTurno(p: {
 
     usados.add(prov.id);
     ultimo = prov.id;
-    ctx.mensajeId = await guardar({ role: "agente", content: texto || null, tool_calls: llamadas, ...datosModelo });
+    // Lo que vale solo dentro del turno (el razonamiento de Claude) no se guarda.
+    const paraGuardar = llamadas.map(({ extraTurno: _turno, ...l }) => (void _turno, l));
+    ctx.mensajeId = await guardar({ role: "agente", content: texto || null, tool_calls: paraGuardar, ...datosModelo });
     historial.push({ rol: "agente", texto, llamadas });
     if (texto) {
       textoFinal += texto + "\n\n";
@@ -257,7 +292,7 @@ export async function* correrTurno(p: {
     await sb.from("sessions").update({ providers_used: todos }).eq("id", sesion.id);
     sesion.providers_used = todos;
   }
-  yield { tipo: "fin", texto: textoFinal.trim(), proveedor: ultimo };
+  yield { tipo: "fin", texto: (textoAviso + textoFinal).trim(), proveedor: ultimo };
 }
 
 /** Un pedido simple de texto (sin herramientas), probando cada proveedor en orden. */
@@ -269,7 +304,7 @@ export async function completar(proveedores: ProveedorLLM[], pedido: PedidoLLM):
       if (texto.trim()) return texto;
     } catch (error) {
       // Se prueba el siguiente.
-      console.warn(`[agente] ${prov.id} (${prov.modelo(pedido.liviano)}) falló en segundo plano. ${error instanceof Error ? error.message : ""}`);
+      console.warn(`[agente] ${prov.id} (${prov.modelo(usoDe(pedido))}) falló en segundo plano. ${error instanceof Error ? error.message : ""}`);
     }
   }
   return null;

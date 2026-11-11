@@ -61,6 +61,7 @@ export async function* pedirTurno(pedido: PedidoTurno, senal?: AbortSignal): Asy
 
 export type EstadoApp = {
   agente: boolean;
+  claude: boolean;
   proveedores: { id: string; nombre: string; modelo: string }[];
   azure: boolean;
   push: boolean;
@@ -80,6 +81,7 @@ export function estadoApp(): Promise<EstadoApp | null> {
 }
 
 export const NOMBRE_PROVEEDOR: Record<string, string> = {
+  claude: "Claude",
   gemini: "Gemini",
   groq: "Groq",
   ollama: "tu modelo local",
@@ -89,7 +91,17 @@ const MOTIVO: Record<string, string> = {
   limite: "llegó a su límite",
   sin_respuesta: "no respondió",
   invalido: "respondió mal",
+  clave: "tiene un problema con la clave",
+  credito: "se quedó sin crédito",
   otro: "falló",
 };
 export const fraseCambioProveedor = (de: string, motivo: string) =>
   `${(NOMBRE_PROVEEDOR[de] ?? de).replace(/^./, (c) => c.toUpperCase())} ${MOTIVO[motivo] ?? "falló"}; sigue el siguiente.`;
+
+/** Nombre legible de un modelo: «Claude Haiku 5.5», o el identificador tal cual para los demás. */
+export function nombreModelo(proveedor: string | null | undefined, modelo: string | null | undefined): string {
+  if (!modelo) return NOMBRE_PROVEEDOR[proveedor ?? ""] ?? proveedor ?? "";
+  const claude = /^claude-(haiku|sonnet|opus)-(\d+)-(\d+)$/.exec(modelo);
+  if (claude) return `Claude ${claude[1][0].toUpperCase()}${claude[1].slice(1)} ${claude[2]}.${claude[3]}`;
+  return `${NOMBRE_PROVEEDOR[proveedor ?? ""] ?? proveedor} · ${modelo}`;
+}

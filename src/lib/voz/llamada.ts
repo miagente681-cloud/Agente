@@ -138,7 +138,7 @@ export class ControlLlamada {
         segmentos = new Segmentador();
       } else if (e.tipo === "cambio") {
         this.editarLinea(id, (l) => ({ ...l, cambios: [...l.cambios, e.cambio] }));
-      } else if (e.tipo === "error") {
+      } else if (e.tipo === "error" || e.tipo === "aviso") {
         this.poner({ aviso: e.mensaje });
       }
     }
