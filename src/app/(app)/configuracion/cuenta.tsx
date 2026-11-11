@@ -6,6 +6,7 @@ import { Boton } from "@/components/ui/boton";
 import { Campo, Entrada, Selector } from "@/components/ui/campo";
 import { Tarjeta } from "@/components/ui/varios";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { Contrasena } from "./contrasena";
 
 const ZONA_POR_DEFECTO = "America/Montevideo";
 
@@ -141,6 +142,7 @@ export function Cuenta() {
         <Boton className="mt-4" onClick={salir}>
           Cerrar sesión
         </Boton>
+        <Contrasena correo={estado.correo} />
       </Tarjeta>
     </div>
   );

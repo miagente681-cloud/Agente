@@ -33,8 +33,16 @@ const TABLAS = [
   "messages", "project_log", "memories", "change_log", "push_subscriptions", "voice_usage", "llm_usage",
 ];
 
+/** Una sesión de Supabase Auth como la devuelve el servidor real. */
+function sesionFalsa() {
+  const exp = Math.floor(Date.now() / 1000) + 3600;
+  return { access_token: jwtFalso(), refresh_token: "falso", token_type: "bearer", expires_in: 3600, expires_at: exp, user: USUARIO };
+}
+
 function crearServidor() {
   const ahora = () => new Date().toISOString();
+  // Contraseña de la cuenta de prueba: no tiene hasta que se pone en Configuración.
+  let contrasena = null;
   let tablas;
   const reiniciar = () => {
     tablas = Object.fromEntries(TABLAS.map((t) => [t, []]));
@@ -123,7 +131,28 @@ function crearServidor() {
     req.on("data", (c) => (crudo += c));
     req.on("end", () => {
       try {
+        if (url.pathname === "/auth/v1/user" && req.method === "PUT") {
+          const { password } = JSON.parse(crudo || "{}");
+          if (password !== undefined) {
+            if (password === contrasena) return enviar(422, { code: 422, error_code: "same_password", msg: "Misma contraseña" });
+            contrasena = password;
+          }
+          return enviar(200, USUARIO);
+        }
         if (url.pathname === "/auth/v1/user") return enviar(200, USUARIO);
+        if (url.pathname === "/auth/v1/token") {
+          const { email, password } = JSON.parse(crudo || "{}");
+          if (url.searchParams.get("grant_type") === "password" && (email !== USUARIO.email || !contrasena || password !== contrasena)) {
+            return enviar(400, { code: 400, error_code: "invalid_credentials", msg: "Invalid login credentials" });
+          }
+          return enviar(200, sesionFalsa());
+        }
+        if (url.pathname === "/auth/v1/verify") {
+          const { token } = JSON.parse(crudo || "{}");
+          if (token !== "123456") return enviar(403, { code: 403, error_code: "otp_expired", msg: "Token has expired or is invalid" });
+          return enviar(200, sesionFalsa());
+        }
+        if (url.pathname === "/__contrasena") return enviar(200, { tiene: contrasena !== null });
         if (url.pathname.startsWith("/auth/v1/admin/users/")) {
           reiniciar(); // Borrar el usuario se lleva todo, como el "on delete cascade".
           tablas.profiles = [];

@@ -165,6 +165,13 @@ Verificado en la documentación oficial (platform.claude.com) el 11/11/2026: los
 - **Un orden de proveedores guardado antes de que existiera Claude** lo pone primero.
 - **«Probar conexión»** usa Haiku con 16 tokens de salida; también queda registrado (cuesta menos de una milésima de centavo).
 
+## Ingreso con contraseña (pedido el 11/11/2026)
+
+- **La contraseña es la forma habitual de entrar**; el código o enlace por correo queda para la primera vez y para cuando la olvidás. No hay flujo aparte de «recuperar contraseña»: entrás con un código y la cambiás en Configuración. Es más simple y no depende de que el correo traiga un enlace a una página nueva.
+- **La contraseña se pone en Configuración → Cuenta**, con la sesión abierta. Se pide repetirla y que tenga al menos 8 caracteres. El mínimo de 8 quedó puesto también en Supabase Auth (antes era 6), así que se cumple del lado del servidor.
+- **No se puede crear una cuenta nueva con contraseña** desde la pantalla de ingreso: las cuentas nuevas siguen entrando por código. Así no hace falta confirmar correos aparte.
+- **El formulario usa los nombres que reconocen los gestores de contraseñas** (`username`, `current-password`, `new-password`), para que el navegador o el celular la guarden y la completen.
+
 ## Despliegue
 
 - **Proyecto de Vercel `miagente`** (equipo MiAgente), enlazado a `miagente681-cloud/Agente`. El repo estaba vacío: el código de la fase 1 se trajo desde `Emontone21/MiAg` con su historial.

@@ -652,6 +652,45 @@ async function main() {
     afirmar(exportado.tasks.length === e.tasks.length && exportado.memories.length === e.memories.length && exportado.messages.length > 5 && exportado.sessions.length >= 4,
       "exportar baja todos mis datos en un archivo");
 
+    console.log("Ingreso con contraseña");
+    const nuevo = await navegador.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const pi = await nuevo.newPage();
+    pi.on("pageerror", (x) => errores.push("ingreso: " + String(x)));
+    await pi.goto(BASE + "/hoy");
+    await pi.waitForURL(/\/ingresar/);
+    await pi.getByLabel("Correo").fill("prueba@ejemplo.com");
+    await pi.getByLabel("Contraseña").fill("todavia-no-tengo");
+    await pi.getByRole("button", { name: "Entrar", exact: true }).click();
+    await pi.getByText(/no coinciden. Si todavía no pusiste una contraseña, entrá con un código/).waitFor();
+    afirmar(true, "sin contraseña puesta, el ingreso con contraseña explica que hay que entrar con un código");
+    await pi.screenshot({ path: path.join(capturas, "26-ingreso-contrasena.png") });
+    await pi.getByRole("button", { name: "Entrar con un código" }).click();
+    await pi.getByRole("button", { name: "Enviarme el acceso" }).click();
+    await pi.getByLabel("Código del correo").fill("123456");
+    await pi.getByRole("button", { name: "Entrar", exact: true }).click();
+    await pi.waitForURL(/\/(hoy|bienvenida)/);
+    afirmar(true, "la primera vez se entra con el código del correo");
+    await pi.goto(BASE + "/configuracion");
+    await pi.getByLabel("Nueva contraseña").fill("corta");
+    await pi.getByText("Tiene que tener al menos 8 caracteres.").waitFor();
+    await pi.getByLabel("Nueva contraseña").fill("una-contraseña-larga");
+    await pi.getByLabel("Repetila").fill("otra-distinta");
+    await pi.getByText("Las dos no coinciden.").waitFor();
+    afirmar(await pi.getByRole("button", { name: "Guardar contraseña" }).isDisabled(), "valida el largo y que las dos coincidan antes de guardar");
+    await pi.getByLabel("Repetila").fill("una-contraseña-larga");
+    await pi.getByRole("button", { name: "Guardar contraseña" }).click();
+    await pi.getByText("Listo. Desde ahora podés entrar con tu correo y esta contraseña.").waitFor();
+    afirmar((await (await fetch(`${FALSO}/__contrasena`)).json()).tiene, "la contraseña se guarda en la cuenta desde Configuración");
+    await pi.getByRole("button", { name: "Cerrar sesión" }).click();
+    await pi.waitForURL(/\/ingresar/);
+    await nuevo.clearCookies();
+    await pi.getByLabel("Correo").fill("prueba@ejemplo.com");
+    await pi.getByLabel("Contraseña").fill("una-contraseña-larga");
+    await pi.getByRole("button", { name: "Entrar", exact: true }).click();
+    await pi.waitForURL(/\/(hoy|bienvenida)$/);
+    afirmar(true, "con correo y contraseña se entra directo, sin esperar ningún correo");
+    await nuevo.close();
+
     console.log("Celular (390 px)");
     const movil = await navegador.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
     await movil.addCookies([{ ...cookieDeSesion(), url: BASE }]);
