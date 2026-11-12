@@ -57,7 +57,8 @@ export function crearGemini(config: {
     modelo: (uso) => (uso === "fondo" ? config.modeloFondo : config.modeloChat),
     async *generar(pedido: PedidoLLM): AsyncGenerator<Trozo> {
       const modelo = usoDe(pedido) === "fondo" ? config.modeloFondo : config.modeloChat;
-      const respuesta = await pedir(
+      const pedirCon = (conNivel: boolean) =>
+        pedir(
         "gemini",
         `${base}/v1beta/models/${encodeURIComponent(modelo)}:streamGenerateContent?alt=sse`,
         {
@@ -66,6 +67,9 @@ export function crearGemini(config: {
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: pedido.sistema }] },
             contents: contenidos(pedido.mensajes),
+            // Sin esto Gemini 3 piensa al máximo («high») y tarda en empezar a responder.
+            // «low» es el nivel para chat e instrucciones simples, el que minimiza la demora.
+            ...(conNivel ? { generationConfig: { thinkingConfig: { thinkingLevel: "low" } } } : {}),
             ...(pedido.herramientas?.length
               ? {
                   tools: [
@@ -81,8 +85,17 @@ export function crearGemini(config: {
               : {}),
           }),
         },
-        { primerByteMs: 25_000, totalMs: 90_000, senal: pedido.senal },
+        // En voz se espera menos: si no empieza a responder, sigue el siguiente proveedor.
+        { primerByteMs: pedido.voz ? 8_000 : 15_000, totalMs: 90_000, senal: pedido.senal },
       );
+      let respuesta: Response;
+      try {
+        respuesta = await pedirCon(true);
+      } catch (error) {
+        // Un modelo que no acepta ese nivel de razonamiento: se pide una vez sin él.
+        if (!(error instanceof ErrorProveedor) || error.clase !== "otro" || !/thinking/i.test(error.message)) throw error;
+        respuesta = await pedirCon(false);
+      }
 
       let n = 0;
       let huboAlgo = false;

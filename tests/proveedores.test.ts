@@ -133,3 +133,20 @@ describe("detalles de cada protocolo", () => {
     expect(Date.now() - inicio).toBeLessThan(3000);
   });
 });
+
+describe("Gemini responde rápido", () => {
+  it("pide el nivel de razonamiento bajo (si no, Gemini 3 piensa al máximo y demora)", async () => {
+    servidor.guion([{ texto: "Hola." }]);
+    await juntar(gemini.generar({ sistema: "s", mensajes: [{ rol: "usuario", texto: "Hola" }] }));
+    expect(servidor.pedidos()[0].cuerpo.generationConfig).toEqual({ thinkingConfig: { thinkingLevel: "low" } });
+  });
+
+  it("si el modelo no acepta ese nivel, lo pide una vez sin él", async () => {
+    servidor.guion([{ estado: 400, mensaje: "thinking_level is not supported for this model" }, { texto: "Hola igual." }]);
+    const trozos = await juntar(gemini.generar({ sistema: "s", mensajes: [{ rol: "usuario", texto: "Hola" }] }));
+    expect(texto(trozos)).toBe("Hola igual.");
+    const [primero, segundo] = servidor.pedidos();
+    expect(primero.cuerpo.generationConfig).toBeDefined();
+    expect(segundo.cuerpo.generationConfig).toBeUndefined();
+  });
+});

@@ -61,7 +61,7 @@ export function crearCompatibleOpenAI(config: {
               : {}),
           }),
         },
-        { primerByteMs: config.primerByteMs ?? 25_000, totalMs: 90_000, senal: pedido.senal },
+        { primerByteMs: config.primerByteMs ?? (pedido.voz ? 8_000 : 15_000), totalMs: 90_000, senal: pedido.senal },
       );
 
       // Las llamadas a herramientas llegan en pedazos, por índice.

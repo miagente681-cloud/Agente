@@ -199,6 +199,17 @@ Principio: nada que proteja plata o cupos depende de datos que la persona puede 
 | `npm audit` | `npm audit fix` sin `--force` no corregía nada (proponía bajar `eslint-config-next` a la 15). Se resolvió con un `override` de `minimatch` a 11.0.8 solo dentro de `@typescript-eslint/typescript-estree`: 0 vulnerabilidades y el lint pasa igual. |
 | Notificaciones en la recorrida | Chromium sin pantalla niega siempre el permiso de notificaciones; la recorrida comprueba que el service worker se registra con la política nueva y que la API de push está disponible. La suscripción real se prueba en un teléfono. |
 
+## Demora de las respuestas (12/11/2026)
+
+En producción, Gemini no empezaba a responder a tiempo en ningún turno («sin_respuesta») y cada mensaje esperaba 25 s antes de pasar a Groq.
+
+| Tema | Decisión |
+|---|---|
+| Razonamiento de Gemini | Sin indicarlo, Gemini 3 usa el nivel «high». Se pide `thinkingLevel: "low"` (el que la documentación recomienda para chat). Si un modelo no lo acepta (400 que menciona «thinking»), se pide una vez sin él. |
+| Espera antes de pasar al siguiente | Primera respuesta: 8 s en voz y 15 s por escrito (antes 25 s), en Gemini y Groq. |
+| Proveedor que no respondió | Se saltea por 1 minuto (si hay otro en la lista), como ya se hacía tras un 429. Vale por instancia del servidor. |
+| iPhone sin voz | Safari solo habla si el primer `speak()` ocurre dentro de un toque: se destraba el audio de forma sincrónica al tocar, y la voz del navegador tolera que iOS no avise el final de una frase. |
+
 ## Despliegue
 
 - **Proyecto de Vercel `miagente`** (equipo MiAgente), enlazado a `miagente681-cloud/Agente`. El repo estaba vacío: el código de la fase 1 se trajo desde `Emontone21/MiAg` con su historial.

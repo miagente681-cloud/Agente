@@ -159,7 +159,7 @@ function crearModelos() {
           : (cuerpo.messages?.find((m) => m.role === "system")?.content ?? "");
       pedidos.push({ proveedor, ruta: url.pathname, cabeceras: req.headers, cuerpo });
       const paso = siguiente(proveedor, sistema);
-      if (paso.estado) return json(paso.estado, { error: { code: paso.estado, message: "Límite de prueba" } });
+      if (paso.estado) return json(paso.estado, { error: { code: paso.estado, message: paso.mensaje ?? "Límite de prueba" } });
 
       const texto = paso.texto ?? "";
       const llamadas = paso.llamadas ?? [];

@@ -16,6 +16,7 @@ export type PasoModelo = {
   proveedor?: string;
   siSistema?: string;
   estado?: number;
+  mensaje?: string;
   texto?: string;
   llamadas?: { nombre: string; argumentos: unknown }[];
   cortar?: boolean;

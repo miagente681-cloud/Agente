@@ -46,6 +46,8 @@ const MAX_PASOS = 6;
 const MAX_MENSAJES_HISTORIAL = 40;
 /** Tras un 429 no se vuelve a probar ese proveedor por un rato. */
 const PAUSA_POR_LIMITE_MS = 2 * 60_000;
+/** Si no respondió a tiempo, tampoco: así cada mensaje no vuelve a esperarlo. */
+const PAUSA_SIN_RESPUESTA_MS = 60_000;
 const enPausa = new Map<string, number>();
 
 type FilaMensaje = {
@@ -250,6 +252,7 @@ export async function* correrTurno(p: {
       // escrito, cupo, clave inválida). El mensaje del proveedor no trae claves.
       console.warn(`[agente] ${prov.id} (${prov.modelo(uso)}) falló: ${clase}. ${error instanceof Error ? error.message : ""}`);
       if (clase === "limite") enPausa.set(prov.id, Date.now() + PAUSA_POR_LIMITE_MS);
+      if (clase === "sin_respuesta" && cola.length > 1) enPausa.set(prov.id, Date.now() + PAUSA_SIN_RESPUESTA_MS);
       cola.shift();
       if (texto) yield { tipo: "reiniciar" };
       yield { tipo: "cambio_proveedor", de: prov.id, motivo: clase };
