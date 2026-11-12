@@ -2,7 +2,7 @@
 
 Project manager para la vida personal: un panel donde documentás proyectos y tareas, y un Agente que te llama, conoce tus proyectos y te hace avanzar.
 
-Estado: **las 7 fases construidas.** Falta cargar las credenciales (ver [CREDENCIALES.md](CREDENCIALES.md)) y probar con los servicios reales. Las decisiones de diseño están en [DECISIONES.md](DECISIONES.md).
+Estado: **en producción.** Cómo está armada y dónde tocar cada cosa: [ARQUITECTURA.md](ARQUITECTURA.md). Variables de entorno: [CREDENCIALES.md](CREDENCIALES.md). Por qué se hizo cada cosa: [DECISIONES.md](DECISIONES.md).
 
 Qué hay:
 
