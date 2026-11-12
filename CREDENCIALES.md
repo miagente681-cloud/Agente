@@ -136,27 +136,27 @@ Imprime una *Public Key* y una *Private Key*.
 |---|---|---|
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | la Public Key | Vercel |
 | `VAPID_PRIVATE_KEY` | la Private Key | Vercel, Sensitive |
-| `VAPID_SUBJECT` | `mailto:` seguido de tu correo | Vercel |
+| `VAPID_SUBJECT` | La dirección de la app | **Ya está cargada** (12/11/2026) |
 
-**Destraba:** el aviso en el celular a la hora de la llamada. **Cómo comprobar:** redesplegá; en el celular (en iPhone, con la app instalada en la pantalla de inicio) Configuración → Notificaciones → Activar → «Enviar una de prueba». Si cambiás las claves más adelante, cada dispositivo tiene que desactivar y volver a activar.
+**Destraba:** los recordatorios (Configuración → Recordatorios) y el aviso en el celular a la hora de la llamada. **Cómo comprobar:** redesplegá; en el celular (en iPhone, con la app instalada en la pantalla de inicio) Configuración → Notificaciones → Activar → «Enviar una de prueba». Si cambiás las claves más adelante, cada dispositivo tiene que desactivar y volver a activar.
 
 ## 8. Programador de llamadas (secreto del cron) — se genera
 
-```bash
-openssl rand -hex 32
-```
+No hace falta ninguna terminal: el secreto se genera dentro de Supabase.
 
-1. Cargá ese valor en Vercel como `CRON_SECRET` (Sensitive) y redesplegá.
-2. En Supabase → SQL Editor, ejecutá esto **con tus valores** (la URL de la app sin barra final y el mismo secreto):
+1. En Supabase → SQL Editor, ejecutá esto tal cual. Guarda la dirección de la app y un secreto nuevo, y te lo muestra:
 
 ```sql
-select vault.create_secret('https://miagente-mi-agente1.vercel.app', 'miagente_app_url');
-select vault.create_secret('EL-MISMO-VALOR-DE-CRON_SECRET', 'miagente_cron_secret');
+select vault.create_secret('https://miagente-zeta.vercel.app', 'miagente_app_url');
+select vault.create_secret(replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''), 'miagente_cron_secret');
+select decrypted_secret from vault.decrypted_secrets where name = 'miagente_cron_secret';
 ```
+
+2. Copiá el valor que devuelve la última línea y cargalo en Vercel como `CRON_SECRET` (Sensitive, *Production*). Redesplegá.
 
 El trabajo que corre cada minuto ya está creado y funcionando en tu proyecto (lo verifiqué); mientras falten esos dos valores no hace nada. Para cambiarlos más adelante: `select vault.update_secret((select id from vault.secrets where name = 'miagente_cron_secret'), 'NUEVO-VALOR');`
 
-**Destraba:** que las llamadas de tus rutinas se disparen y se reprogramen solas. **Cómo comprobar:** creá una rutina para dentro de 3 minutos (Configuración → Rutinas de llamada) y esperá: tiene que aparecer el aviso «Tu Agente te está llamando» en la app y, si hiciste el paso 7, la notificación. Para ver las respuestas del servidor: `select status_code, content from net._http_response order by created desc limit 5;` (200 = bien, 401 = el secreto no coincide, 503 = falta `CRON_SECRET` o la clave de servicio en Vercel).
+**Destraba:** que los recordatorios y las llamadas de tus rutinas se disparen y se reprogramen solas. **Cómo comprobar:** creá una rutina para dentro de 3 minutos (Configuración → Rutinas de llamada) y esperá: tiene que aparecer el aviso «Tu Agente te está llamando» en la app y, si hiciste el paso 7, la notificación. Para ver las respuestas del servidor: `select status_code, content from net._http_response order by created desc limit 5;` (200 = bien, 401 = el secreto no coincide, 503 = falta `CRON_SECRET` o la clave de servicio en Vercel).
 
 ## 9. Azure Speech — opcional
 

@@ -12,6 +12,7 @@ import { usePerfil } from "@/lib/datos/perfil";
 import { AJUSTES_POR_DEFECTO, ajustesDe, VENTANA_POR_DEFECTO } from "@/lib/programacion/horarios";
 import { activarPush, desactivarPush, estadoPush, type EstadoPush } from "@/lib/push/cliente";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { ConfigRecordatorios } from "./recordatorios";
 
 type Rutina = {
   id: string;
@@ -380,6 +381,7 @@ export function ConfigLlamadas() {
         </div>
       </Tarjeta>
 
+      <ConfigRecordatorios />
       <Notificaciones estado={estado} />
     </>
   );

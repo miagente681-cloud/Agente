@@ -292,4 +292,22 @@ describe("el programador, minuto a minuto", () => {
     expect(r.avisos + r.postergados).toBe(2);
     expect(r.postergados).toBeGreaterThanOrEqual(1);
   });
+
+  it("manda cada recordatorio a su hora, en sus días, una sola vez por día", async () => {
+    // Martes 10/11; 20:00 en Montevideo son las 23:00 UTC.
+    servidor.sembrar("reminders", { message: "Entrá a documentar tu día.", weekdays: [2, 4], local_time: "20:00:00" });
+    servidor.sembrar("reminders", { message: "Solo los lunes", weekdays: [1], local_time: "20:00:00" });
+    servidor.sembrar("reminders", { message: "Apagado", weekdays: [2], local_time: "20:00:00", active: false });
+    expect(await tick("2026-11-10T22:59:00Z")).toMatchObject({ recordatorios: 0 });
+    expect(await tick("2026-11-10T23:00:10Z")).toMatchObject({ recordatorios: 1 });
+    const recordatorio = enviados.find((e) => e.carga.cuerpo === "Entrá a documentar tu día.");
+    expect(recordatorio?.carga).toMatchObject({ titulo: "MiAgente", url: "/chat" });
+    expect(await tick("2026-11-10T23:01:00Z")).toMatchObject({ recordatorios: 0 }); // no repite
+    expect(await tick("2026-11-11T23:00:10Z")).toMatchObject({ recordatorios: 0 }); // miércoles: no toca
+    expect(await tick("2026-11-12T23:00:10Z")).toMatchObject({ recordatorios: 1 }); // jueves
+    expect(enviados.filter((e) => e.carga.etiqueta.startsWith("recordatorio-"))).toHaveLength(2);
+    // Si el programador estuvo caído más de una hora, el de ese día ya no se manda.
+    servidor.sembrar("reminders", { message: "Viejo", weekdays: [4], local_time: "08:00:00" });
+    expect(await tick("2026-11-12T23:30:00Z")).toMatchObject({ recordatorios: 0 });
+  });
 });

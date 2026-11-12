@@ -723,6 +723,18 @@ async function main() {
     await fetch(`${FALSO}/__forzar_limite`, { method: "POST", body: JSON.stringify({ clave: "turno", activo: false }) });
     afirmar(true, "al pasarse del límite de frecuencia, el chat muestra un mensaje claro (429)");
 
+    console.log("Recordatorios");
+    await pagina.goto(BASE + "/configuracion");
+    await pagina.getByRole("button", { name: "Agregar recordatorio" }).click();
+    await pagina.getByLabel("Hora del recordatorio").fill("21:30");
+    await pagina.getByRole("group", { name: "Días del recordatorio" }).getByRole("button", { name: "Sábado" }).click();
+    await pagina.getByLabel("Texto de la notificación").fill("A documentar el día");
+    await pagina.getByLabel("Texto de la notificación").blur();
+    await pagina.waitForTimeout(500);
+    const rec = (await estado()).reminders[0];
+    afirmar(rec && rec.local_time.startsWith("21:30") && rec.weekdays.join() === "1,2,3,4,5,6" && rec.message === "A documentar el día" && rec.active,
+      "en Configuración se arma un recordatorio con hora, días y texto");
+
     console.log("Terminar la sesión pidiéndoselo al Agente");
     await guion([
       { llamadas: [{ nombre: "terminar_sesion", argumentos: {} }] },

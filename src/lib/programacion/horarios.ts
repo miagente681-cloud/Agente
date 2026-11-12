@@ -232,3 +232,32 @@ export function cuandoLegible(instante: Date, zona: string, ahora: Date): string
   const DIAS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
   return `el ${DIAS[p.diaSemana]} ${Number(p.fecha.slice(8))} a las ${hora}`;
 }
+
+// --- Recordatorios ----------------------------------------------------------
+
+export type RecordatorioP = {
+  id: string;
+  weekdays: number[];
+  local_time: string;
+  active: boolean;
+  last_sent_on: string | null;
+};
+
+/** Pasado este tiempo desde su hora, un recordatorio ya no se manda (el programador estuvo caído). */
+export const TOLERANCIA_RECORDATORIO_MIN = 60;
+
+/**
+ * Qué recordatorios toca mandar ahora: activos, del día de hoy (en la zona de
+ * la persona), cuya hora ya llegó y que hoy todavía no se mandaron.
+ */
+export function recordatoriosPendientes<T extends RecordatorioP>(ahora: Date, zona: string, recordatorios: T[]): { recordatorio: T; fecha: string }[] {
+  const local = partesEnZona(ahora, zona);
+  return recordatorios
+    .filter((r) => {
+      if (!r.active || !r.weekdays.includes(local.diaSemana) || r.last_sent_on === local.fecha) return false;
+      const [h, m] = r.local_time.split(":").map(Number);
+      const atraso = local.minutos - (h * 60 + m);
+      return atraso >= 0 && atraso <= TOLERANCIA_RECORDATORIO_MIN;
+    })
+    .map((recordatorio) => ({ recordatorio, fecha: local.fecha }));
+}

@@ -5,7 +5,7 @@ import { supabaseServer, usuarioActual } from "@/lib/supabase/server";
 // Orden que respeta las referencias entre tablas.
 const TABLAS = [
   "change_log", "messages", "project_log", "memories", "tasks", "projects", "areas",
-  "sessions", "call_routines", "availability_windows", "push_subscriptions",
+  "sessions", "call_routines", "availability_windows", "reminders", "push_subscriptions",
 ];
 const NINGUNO = "00000000-0000-0000-0000-000000000000";
 

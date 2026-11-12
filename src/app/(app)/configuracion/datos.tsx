@@ -11,7 +11,7 @@ import { supabaseBrowser } from "@/lib/supabase/client";
 
 const TABLAS = [
   "profiles", "areas", "projects", "tasks", "project_log", "sessions", "messages", "memories",
-  "change_log", "call_routines", "availability_windows", "voice_usage",
+  "change_log", "call_routines", "availability_windows", "reminders", "voice_usage",
 ];
 const PALABRA = "BORRAR";
 

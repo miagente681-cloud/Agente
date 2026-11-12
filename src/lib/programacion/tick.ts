@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { destinoPushValido } from "@/lib/push/destinos";
-import { ajustesDe, cuandoLegible, decidir, type RutinaP, type SesionP, type Ventana } from "./horarios";
+import { ajustesDe, cuandoLegible, decidir, recordatoriosPendientes, type RecordatorioP, type RutinaP, type SesionP, type Ventana } from "./horarios";
 
 /**
  * Lo que hace el programador cada minuto, para todos los usuarios: aplica en
@@ -19,6 +19,8 @@ export type ResumenTick = {
   perdidas: number;
   cerradas: number;
   avisos: number;
+  /** Recordatorios enviados (los que cada persona programó en Configuración). */
+  recordatorios: number;
   /** Avisos que no se mandaron porque se acabó el tiempo de esta corrida. */
   postergados: number;
 };
@@ -45,7 +47,7 @@ export async function correrTick(p: {
   reloj?: () => number;
 }): Promise<ResumenTick> {
   const { admin, ahora } = p;
-  const resumen: ResumenTick = { creadas: 0, notificadas: 0, reprogramadas: 0, perdidas: 0, cerradas: 0, avisos: 0, postergados: 0 };
+  const resumen: ResumenTick = { creadas: 0, notificadas: 0, reprogramadas: 0, perdidas: 0, cerradas: 0, avisos: 0, recordatorios: 0, postergados: 0 };
   const reloj = p.reloj ?? Date.now;
   const limiteEnvios = reloj() + (p.tiempoEnviosMs ?? TIEMPO_ENVIOS_POR_CORRIDA_MS);
   const ahoraISO = ahora.toISOString();
@@ -59,6 +61,65 @@ export async function correrTick(p: {
     .lt("started_at", new Date(ahora.getTime() - HORAS_ABANDONADA * 3_600_000).toISOString())
     .select("id");
   resumen.cerradas = cerradas?.length ?? 0;
+
+  /** Manda avisos a los dispositivos de una persona, dentro del tiempo de la corrida. */
+  const avisar = async (userId: string, avisos: CargaPush[]): Promise<number> => {
+    const enviar = p.enviar;
+    if (!avisos.length || !enviar) return 0;
+    const { data: suscripciones } = await admin
+      .from("push_subscriptions")
+      .select("endpoint,p256dh,auth")
+      .eq("user_id", userId);
+    // Como mucho 10 por usuario (lo limita la base); solo destinos de push reales.
+    const validas = ((suscripciones ?? []) as Suscripcion[]).filter((s) => destinoPushValido(s.endpoint)).slice(0, 10);
+    let enviados = 0;
+    // Los dispositivos de una persona en paralelo: uno lento no demora a los otros.
+    await Promise.all(
+      validas.map(async (s) => {
+        for (const aviso of avisos) {
+          if (reloj() >= limiteEnvios) {
+            resumen.postergados++;
+            continue;
+          }
+          const resultado = await enviar(s, aviso);
+          if (resultado === "ok") enviados++;
+          if (resultado === "vencida") {
+            await admin.from("push_subscriptions").delete().eq("endpoint", s.endpoint);
+            break;
+          }
+        }
+      }),
+    );
+    return enviados;
+  };
+
+  // Recordatorios: no dependen de que la persona tenga rutinas de llamada.
+  const { data: activos } = await admin
+    .from("reminders")
+    .select("id,user_id,message,weekdays,local_time,active,last_sent_on")
+    .eq("active", true);
+  const recordatorios = (activos ?? []) as (RecordatorioP & { user_id: string; message: string })[];
+  if (recordatorios.length) {
+    const duenos = [...new Set(recordatorios.map((r) => r.user_id))];
+    const { data: zonas } = await admin.from("profiles").select("user_id,timezone").in("user_id", duenos);
+    for (const perfil of (zonas ?? []) as { user_id: string; timezone: string }[]) {
+      const tocan = recordatoriosPendientes(ahora, perfil.timezone, recordatorios.filter((r) => r.user_id === perfil.user_id));
+      for (const { recordatorio, fecha } of tocan) {
+        // Se marca antes de enviar y solo si nadie lo marcó: dos corridas no avisan dos veces.
+        const { data: marcado } = await admin
+          .from("reminders")
+          .update({ last_sent_on: fecha })
+          .eq("id", recordatorio.id)
+          .or(`last_sent_on.is.null,last_sent_on.neq.${fecha}`)
+          .select("id");
+        if (!marcado?.length) continue;
+        const enviados = await avisar(perfil.user_id, [
+          { titulo: "MiAgente", cuerpo: recordatorio.message, url: "/chat", etiqueta: `recordatorio-${recordatorio.id}` },
+        ]);
+        if (enviados) resumen.recordatorios++;
+      }
+    }
+  }
 
   const [rutinas, pendientes, recientes] = await Promise.all([
     admin.from("call_routines").select("id,user_id,name,weekdays,local_time,target_minutes,focus,active").eq("active", true),
@@ -178,31 +239,7 @@ export async function correrTick(p: {
       }
     }
 
-    if (!avisos.length || !p.enviar) continue;
-    const { data: suscripciones } = await admin
-      .from("push_subscriptions")
-      .select("endpoint,p256dh,auth")
-      .eq("user_id", userId);
-    // Como mucho 10 por usuario (lo limita la base); solo destinos de push reales.
-    const validas = ((suscripciones ?? []) as Suscripcion[]).filter((s) => destinoPushValido(s.endpoint)).slice(0, 10);
-    const enviar = p.enviar;
-    // Los dispositivos de una persona en paralelo: uno lento no demora a los otros.
-    await Promise.all(
-      validas.map(async (s) => {
-        for (const aviso of avisos) {
-          if (reloj() >= limiteEnvios) {
-            resumen.postergados++;
-            continue;
-          }
-          const resultado = await enviar(s, aviso);
-          if (resultado === "ok") resumen.avisos++;
-          if (resultado === "vencida") {
-            await admin.from("push_subscriptions").delete().eq("endpoint", s.endpoint);
-            break;
-          }
-        }
-      }),
-    );
+    resumen.avisos += await avisar(userId, avisos);
   }
   return resumen;
 }

@@ -219,6 +219,17 @@ En producción, Gemini no empezaba a responder a tiempo en ningún turno («sin_
 | Por su cuenta | No: la descripción y las reglas le dicen que solo la use si la persona lo pide. |
 | Tamaño | La descripción es mínima para no pasarse del cupo de tokens por turno de Groq (la prueba de tamaño sigue en 7.000 caracteres). |
 
+## Recordatorios por notificación (12/11/2026)
+
+| Tema | Decisión |
+|---|---|
+| Qué son | Tabla `reminders` (migración 0006): hora, días de la semana y texto. Se arman en Configuración → Recordatorios. Máximo 10 por persona. |
+| Quién los manda | El mismo programador de las llamadas (una vez por minuto), con las mismas claves de push. No dependen de tener rutinas de llamada. |
+| Uno por día | Se marca `last_sent_on` antes de enviar, solo si nadie lo marcó: dos corridas no avisan dos veces. Si se cambia la hora o los días, puede volver a sonar ese día. |
+| Si el programador estuvo caído | Un recordatorio con más de 60 minutos de atraso ya no se manda. |
+| Al tocarlo | Abre el chat con el Agente, que es donde se documenta. |
+| Claves | No las generé yo (el sistema de permisos lo impide, para que no pasen por la conversación). El secreto del programador se genera dentro de Supabase con un SQL que corre la persona. `VAPID_SUBJECT` quedó cargada con la dirección de la app. |
+
 ## Despliegue
 
 - **Proyecto de Vercel `miagente`** (equipo MiAgente), enlazado a `miagente681-cloud/Agente`. El repo estaba vacío: el código de la fase 1 se trajo desde `Emontone21/MiAg` con su historial.
