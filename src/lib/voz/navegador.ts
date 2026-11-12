@@ -29,8 +29,11 @@ export const navegadorHabla = () => typeof window !== "undefined" && "speechSynt
  * peor calidad y soporte desparejo. Es la alternativa cuando no hay Azure o se
  * agotó el cupo del mes.
  */
-export function crearVozNavegador(): ProveedorVoz {
+export function crearVozNavegador(opciones: { alBloqueado?: () => void } = {}): ProveedorVoz {
   const Clase = claseReconocedor();
+  // iOS suelta las frases que nadie referencia y entonces nunca avisa que
+  // terminaron: se guardan acá hasta que suenan.
+  const enCurso = new Set<SpeechSynthesisUtterance>();
   let reconocedor: Reconocedor | null = null;
   let escuchando = false;
 
@@ -93,19 +96,41 @@ export function crearVozNavegador(): ProveedorVoz {
     hablar(texto) {
       return new Promise<void>((listo) => {
         if (!navegadorHabla()) return listo();
+        const s = window.speechSynthesis;
         const frase = new SpeechSynthesisUtterance(texto);
         const voz = vozEnEspanol();
         if (voz) frase.voice = voz;
         frase.lang = voz?.lang ?? "es-UY";
         frase.rate = 1.05;
-        frase.onend = () => listo();
-        frase.onerror = () => listo();
-        window.speechSynthesis.speak(frase);
+        let terminada = false;
+        const reloj: { id?: ReturnType<typeof setInterval> } = {};
+        const terminar = () => {
+          if (terminada) return;
+          terminada = true;
+          clearInterval(reloj.id);
+          enCurso.delete(frase);
+          listo();
+        };
+        frase.onend = terminar;
+        frase.onerror = (e) => {
+          // «not-allowed»: el teléfono bloqueó el sonido (falta un toque).
+          if ((e as SpeechSynthesisErrorEvent).error === "not-allowed") opciones.alBloqueado?.();
+          terminar();
+        };
+        enCurso.add(frase);
+        s.resume();
+        s.speak(frase);
+        // En iPhone a veces nunca llega «terminó»: si ya no está sonando nada, se da por dicha.
+        const desde = Date.now();
+        reloj.id = setInterval(() => {
+          if (Date.now() - desde > 1500 && !s.speaking && !s.pending) terminar();
+        }, 500);
       });
     },
 
     callar() {
       if (navegadorHabla()) window.speechSynthesis.cancel();
+      enCurso.clear();
     },
 
     cerrar() {

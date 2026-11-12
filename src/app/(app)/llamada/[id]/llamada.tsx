@@ -11,6 +11,7 @@ import { useDatos } from "@/lib/datos/almacen";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { crearVozAzure } from "@/lib/voz/azure";
 import { ControlLlamada, type EstadoLlamada } from "@/lib/voz/llamada";
+import { desbloquearAudio } from "@/lib/voz/desbloqueo";
 import { crearVozNavegador, navegadorEscucha } from "@/lib/voz/navegador";
 import type { ProveedorVoz, RespuestaToken } from "@/lib/voz/tipos";
 import { crearMonitor } from "@/lib/voz/volumen";
@@ -107,6 +108,12 @@ export function Llamada({ id }: { id: string }) {
    * Arma el proveedor de voz: Azure si hay token, si no el navegador. Sin
    * micrófono sirve igual para que el Agente hable; solo no escucha.
    */
+  const vozDelNavegador = () =>
+    crearVozNavegador({
+      alBloqueado: () =>
+        control.current?.avisar("El teléfono bloqueó el sonido. Tocá la pantalla una vez y el Agente vuelve a hablar."),
+    });
+
   async function armarVoz(microfono: MediaStream | null): Promise<{ voz: ProveedorVoz; aviso: string | null }> {
     const token = await pedirToken();
     let aviso: string | null = null;
@@ -117,13 +124,13 @@ export function Llamada({ id }: { id: string }) {
         pedirToken,
         microfono,
         alAgotarse: () =>
-          control.current?.cambiarVoz(crearVozNavegador(), "Se agotó el cupo de voz de Azure de este mes: sigo con la voz del navegador."),
+          control.current?.cambiarVoz(vozDelNavegador(), "Se agotó el cupo de voz de Azure de este mes: sigo con la voz del navegador."),
       }).catch(() => null);
       if (azure && token.aviso) aviso = `Vas por el ${token.porcentaje} % del cupo gratuito de voz de este mes.`;
     } else if (token.motivo === "agotado") {
       aviso = "Se agotó el cupo de voz de Azure de este mes: uso la voz del navegador.";
     }
-    const voz = azure ?? crearVozNavegador();
+    const voz = azure ?? vozDelNavegador();
     if (microfono && voz.id === "navegador" && !navegadorEscucha()) {
       aviso = "Este navegador no reconoce voz: podés escribir abajo y el Agente te responde hablando.";
     }
@@ -144,6 +151,11 @@ export function Llamada({ id }: { id: string }) {
 
   /** Tiene que arrancar desde un toque: el navegador no da micrófono ni audio de otra forma. */
   async function empezar(sesion: Sesion, yaEmpezada: boolean, quiereMicrofono: boolean) {
+    // Antes de cualquier espera: en iPhone el audio solo se habilita dentro del toque.
+    desbloquearAudio();
+    // Y cada toque durante la llamada lo vuelve a habilitar (por si el teléfono lo suspendió).
+    window.addEventListener("pointerdown", desbloquearAudio);
+    limpiezas.current.push(() => window.removeEventListener("pointerdown", desbloquearAudio));
     setPantalla({ tipo: "en_llamada", sesion });
     const prueba = vozDePrueba();
     let voz: ProveedorVoz;
@@ -185,6 +197,7 @@ export function Llamada({ id }: { id: string }) {
 
   /** El botón del micrófono: silencia, vuelve a escuchar o, si nunca se activó, lo pide. */
   async function alternarMicrofono() {
+    desbloquearAudio();
     const c = control.current;
     if (!c) return;
     if (conMicrofono) return c.silenciar(!c.estado.silenciado);
@@ -202,6 +215,7 @@ export function Llamada({ id }: { id: string }) {
   }
 
   function enviarTexto(e: FormEvent) {
+    desbloquearAudio();
     e.preventDefault();
     if (!texto.trim()) return;
     control.current?.escribir(texto);

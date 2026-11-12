@@ -262,3 +262,83 @@ describe("control de la llamada", () => {
     expect(estado()).toMatchObject({ motor: "navegador", aviso: "Se agotó el cupo de Azure", fase: "escuchando" });
   });
 });
+
+describe("voz del navegador en iPhone", () => {
+  /** speechSynthesis de mentira: `modo` decide si avisa que terminó, si nunca avisa o si está bloqueado. */
+  function instalar(modo: "normal" | "sin_aviso" | "bloqueado") {
+    const dichas: string[] = [];
+    let hablando = false;
+    const s = {
+      speaking: false,
+      pending: false,
+      resume() {},
+      cancel() {
+        hablando = false;
+        s.speaking = false;
+      },
+      getVoices: () => [],
+      speak(f: { text: string; onend?: () => void; onerror?: (e: { error: string }) => void }) {
+        if (modo === "bloqueado") return setTimeout(() => f.onerror?.({ error: "not-allowed" }), 5);
+        dichas.push(f.text);
+        hablando = true;
+        s.speaking = true;
+        setTimeout(() => {
+          hablando = false;
+          s.speaking = false;
+          if (modo === "normal") f.onend?.();
+        }, 20);
+      },
+    };
+    const g = globalThis as Record<string, unknown>;
+    g.window = { speechSynthesis: s };
+    g.SpeechSynthesisUtterance = class {
+      text: string;
+      constructor(t: string) {
+        this.text = t;
+      }
+    };
+    return { dichas, hablando: () => hablando };
+  }
+  const limpiar = () => {
+    const g = globalThis as Record<string, unknown>;
+    delete g.window;
+    delete g.SpeechSynthesisUtterance;
+  };
+
+  it("termina de hablar aunque el teléfono nunca avise que terminó", async () => {
+    const { crearVozNavegador } = await import("@/lib/voz/navegador");
+    const { dichas } = instalar("sin_aviso");
+    try {
+      const inicio = Date.now();
+      await crearVozNavegador().hablar("Hola, ¿cómo venís?");
+      expect(dichas).toEqual(["Hola, ¿cómo venís?"]);
+      expect(Date.now() - inicio).toBeLessThan(4000);
+    } finally {
+      limpiar();
+    }
+  });
+
+  it("si el teléfono bloquea el sonido, avisa para que la persona toque la pantalla", async () => {
+    const { crearVozNavegador } = await import("@/lib/voz/navegador");
+    instalar("bloqueado");
+    try {
+      let avisado = false;
+      await crearVozNavegador({ alBloqueado: () => (avisado = true) }).hablar("Hola");
+      expect(avisado).toBe(true);
+    } finally {
+      limpiar();
+    }
+  });
+
+  it("destrabar el audio dice una frase muda una sola vez", async () => {
+    const { desbloquearAudio } = await import("@/lib/voz/desbloqueo");
+    const { dichas } = instalar("normal");
+    try {
+      desbloquearAudio();
+      desbloquearAudio();
+      expect(dichas).toEqual([" "]);
+    } finally {
+      limpiar();
+    }
+  });
+});
