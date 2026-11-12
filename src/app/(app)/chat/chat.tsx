@@ -48,6 +48,8 @@ export function Chat() {
   const fin = useRef<HTMLDivElement>(null);
   const abrio = useRef(false);
 
+  // El Agente puede terminar la sesión a pedido; `enviar` llama a la versión vigente de terminar().
+  const terminarRef = useRef<(id?: string) => Promise<void>>(async () => {});
   const editar = (id: string, cambio: (i: Item) => Item) =>
     setItems((lista) => lista.map((i) => (i.id === id ? cambio(i) : i)));
 
@@ -61,8 +63,14 @@ export function Chat() {
         { id: idAgente, rol: "agente", texto: "", cambios: [], escribiendo: true },
       ]);
       let huboCambios = false;
+      let terminarSesion = false;
+      let idSesion = sesionId;
       for await (const e of pedirTurno({ ...pedido, ...(sesionId ? { sesionId } : {}) })) {
-        if (e.tipo === "sesion") setSesion((s) => s ?? { id: e.id, kind: pedido.tipo ?? "chat" });
+        if (e.tipo === "terminar") terminarSesion = true;
+        else if (e.tipo === "sesion") {
+          idSesion ??= e.id;
+          setSesion((s) => s ?? { id: e.id, kind: pedido.tipo ?? "chat" });
+        }
         else if (e.tipo === "texto") editar(idAgente, (i) => ({ ...i, texto: i.texto + e.texto }));
         else if (e.tipo === "reiniciar") editar(idAgente, (i) => ({ ...i, texto: "" }));
         else if (e.tipo === "proveedor") editar(idAgente, (i) => ({ ...i, modelo: nombreModelo(e.id, e.modelo) }));
@@ -78,6 +86,11 @@ export function Chat() {
       setEnviando(false);
       // Lo que cambió el Agente tiene que verse en el resto del panel.
       if (huboCambios) void recargar();
+      // «Terminá la sesión»: se cierra sola, como con el botón, después de mostrar la despedida.
+      if (terminarSesion && idSesion) {
+        await new Promise((r) => setTimeout(r, 1500));
+        await terminarRef.current(idSesion);
+      }
     },
     [recargar],
   );
@@ -160,13 +173,16 @@ export function Chat() {
     }
   }
 
-  async function terminar() {
-    if (!sesion) return;
+  async function terminar(id: string | undefined = sesion?.id) {
+    if (!id) return;
     setCerrando(true);
-    await fetch(`/api/sesiones/${sesion.id}/cerrar`, { method: "POST" }).catch(() => null);
+    await fetch(`/api/sesiones/${id}/cerrar`, { method: "POST" }).catch(() => null);
     void recargar();
-    router.push(`/sesiones/${sesion.id}`);
+    router.push(`/sesiones/${id}`);
   }
+  useEffect(() => {
+    terminarRef.current = terminar;
+  });
 
   /** Pasa a voz: sigue la conversación abierta o empieza un chat de voz nuevo. */
   async function hablar() {
@@ -196,7 +212,7 @@ export function Chat() {
               Hablar
             </Boton>
             {sesion && hayDichos ? (
-              <Boton tamano="sm" onClick={terminar} disabled={cerrando || enviando}>
+              <Boton tamano="sm" onClick={() => void terminar()} disabled={cerrando || enviando}>
                 {cerrando ? "Cerrando…" : "Terminar"}
               </Boton>
             ) : null}

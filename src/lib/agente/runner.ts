@@ -37,6 +37,8 @@ export type EventoTurno =
   | { tipo: "error"; mensaje: string }
   /** Algo que la persona tiene que saber, sin ser un error (presupuesto de Claude). */
   | { tipo: "aviso"; mensaje: string }
+  /** El Agente terminó la sesión a pedido del usuario: la pantalla la cierra al terminar de mostrar (o decir) la respuesta. */
+  | { tipo: "terminar" }
   | { tipo: "fin"; texto: string; proveedor: string | null };
 
 /** Pasado este tiempo, la foto de memorias y estado de una sesión se vuelve a armar. */
@@ -334,6 +336,7 @@ export async function* correrTurno(p: {
     if (p.admin) await p.admin.from("sessions").update({ providers_used: todos }).eq("id", sesion.id).eq("user_id", datos.perfil.user_id);
     sesion.providers_used = todos;
   }
+  if (ctx.terminar) yield { tipo: "terminar" };
   yield { tipo: "fin", texto: (textoAviso + textoFinal).trim(), proveedor: ultimo };
 }
 

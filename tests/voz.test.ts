@@ -342,3 +342,36 @@ describe("voz del navegador en iPhone", () => {
     }
   });
 });
+
+describe("terminar la llamada a pedido", () => {
+  it("cuando el Agente termina la sesión, primero se despide y después corta, sin volver a escuchar", async () => {
+    const voz = vozFalsa();
+    let terminada = false;
+    let estado!: EstadoLlamada;
+    const control = new ControlLlamada({
+      voz,
+      alCambiar: (e) => (estado = e),
+      alTerminar: () => {
+        terminada = true;
+      },
+      async *turno() {
+        await tic();
+        yield { tipo: "texto", texto: "Listo, cerramos acá. ¡Hasta el jueves!" };
+        yield { tipo: "terminar" };
+      },
+    });
+    await control.empezar(false);
+    voz.decir("Terminá la sesión");
+    for (let i = 0; i < 10 && !voz.dicho.length; i++) await tic();
+    expect(voz.dicho[0]).toBe("Listo, cerramos acá.");
+    expect(terminada).toBe(false); // todavía se está despidiendo
+    for (let i = 0; i < 30 && !terminada; i++) {
+      voz.terminarFrase();
+      await tic();
+    }
+    expect(voz.dicho.join(" ")).toBe("Listo, cerramos acá. ¡Hasta el jueves!");
+    expect(terminada).toBe(true);
+    expect(voz.escuchando).toBe(false);
+    expect(estado.fase).not.toBe("escuchando");
+  });
+});

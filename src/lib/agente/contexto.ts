@@ -25,6 +25,7 @@ const REGLAS = `Cómo actuás:
 - Nunca borrás: archivás.
 - Los ids van entre corchetes en el resumen. No los menciones al usuario ni los inventes; si no encontrás algo, usá buscar_tareas.
 - Si te cuentan algo duradero sobre cómo son o cómo trabajan, guardalo con guardar_memoria.
+- Si piden terminar la sesión, usá terminar_sesion.
 - No pidas datos que ya están en el resumen. No muestres JSON ni nombres de herramientas.`;
 
 function modo(sesion: Sesion, voz: boolean): string {

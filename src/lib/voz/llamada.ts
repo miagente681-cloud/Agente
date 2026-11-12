@@ -47,6 +47,8 @@ export class ControlLlamada {
       nivel?: () => number;
       /** Empieza sin escuchar: la persona escribe (o no dio permiso de micrófono). */
       silenciado?: boolean;
+      /** El Agente terminó la sesión a pedido: se llama cuando terminó de despedirse. */
+      alTerminar?: () => void;
     },
   ) {
     this.voz = p.voz;
@@ -116,6 +118,7 @@ export class ControlLlamada {
     if (!vigente()) return;
 
     const id = this.n++;
+    let terminar = false;
     this.poner({ fase: "pensando", lineas: [...this.estado.lineas, { id, quien: "agente", texto: "", cambios: [] }] });
     let segmentos = new Segmentador();
     const decir = (bloque: string) => {
@@ -140,12 +143,17 @@ export class ControlLlamada {
         this.editarLinea(id, (l) => ({ ...l, cambios: [...l.cambios, e.cambio] }));
       } else if (e.tipo === "error" || e.tipo === "aviso") {
         this.poner({ aviso: e.mensaje });
+      } else if (e.tipo === "terminar") {
+        terminar = true;
       }
     }
     if (!vigente()) return;
     segmentos.cerrar().forEach(decir);
     await this.cola;
-    if (vigente()) await this.escuchar();
+    if (!vigente()) return;
+    // Pidió terminar: se despide y corta, sin volver a escuchar.
+    if (terminar && this.p.alTerminar) return this.p.alTerminar();
+    await this.escuchar();
   }
 
   private cortarAlAgente() {

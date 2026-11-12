@@ -210,6 +210,15 @@ En producción, Gemini no empezaba a responder a tiempo en ningún turno («sin_
 | Proveedor que no respondió | Se saltea por 1 minuto (si hay otro en la lista), como ya se hacía tras un 429. Vale por instancia del servidor. |
 | iPhone sin voz | Safari solo habla si el primer `speak()` ocurre dentro de un toque: se destraba el audio de forma sincrónica al tocar, y la voz del navegador tolera que iOS no avise el final de una frase. |
 
+## Terminar la sesión pidiéndoselo al Agente (12/11/2026)
+
+| Tema | Decisión |
+|---|---|
+| Cómo | Herramienta `terminar_sesion` (sin argumentos). Marca el turno; el servidor manda el evento `terminar` al final y la pantalla cierra igual que con el botón (resumen, compromisos y memorias incluidos). |
+| Cuándo se corta | Después de la despedida: en el chat, 1,5 s después de mostrarla; en la llamada, cuando terminó de decirla, sin volver a escuchar. |
+| Por su cuenta | No: la descripción y las reglas le dicen que solo la use si la persona lo pide. |
+| Tamaño | La descripción es mínima para no pasarse del cupo de tokens por turno de Groq (la prueba de tamaño sigue en 7.000 caracteres). |
+
 ## Despliegue
 
 - **Proyecto de Vercel `miagente`** (equipo MiAgente), enlazado a `miagente681-cloud/Agente`. El repo estaba vacío: el código de la fase 1 se trajo desde `Emontone21/MiAg` con su historial.

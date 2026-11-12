@@ -183,6 +183,8 @@ export function Llamada({ id }: { id: string }) {
       nivel,
       silenciado: !hayMicrofono,
       alCambiar: setEstado,
+      // «Terminá la sesión»: el Agente se despide y la llamada se corta sola, como con el botón.
+      alTerminar: () => void cortar(),
       turno: (pedido, senal) =>
         pedirTurno({ ...pedido, sesionId: sesion.id, canal: "voz", voz: c.estado.motor === "azure" ? "azure" : "navegador" }, senal),
     });

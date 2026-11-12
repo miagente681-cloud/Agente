@@ -403,3 +403,26 @@ describe("al terminar una sesión", () => {
     expect(p.pedidos[0].mensajes[0]).toEqual({ rol: "usuario", texto: "Mensaje 22" });
   });
 });
+
+describe("terminar la sesión a pedido", () => {
+  it("si el usuario lo pide, el Agente usa terminar_sesion, se despide y el turno avisa que hay que cerrar", async () => {
+    const { sesion } = sembrar();
+    const gemini = proveedorFalso("gemini", [
+      { llamadas: [{ nombre: "terminar_sesion", argumentos: {} }] },
+      { texto: "Listo, cerramos acá. ¡Nos vemos el jueves!" },
+    ]);
+    const eventos = await juntar(correrTurno({ sb, sesion, proveedores: [gemini], ahora: AHORA, entrada: { texto: "Terminá la sesión" } }));
+    const tipos = eventos.map((e) => e.tipo);
+    expect(tipos).toContain("terminar");
+    expect(tipos.indexOf("terminar")).toBeGreaterThan(tipos.lastIndexOf("texto"));
+    expect(deTipo(eventos, "fin")[0].texto).toBe("Listo, cerramos acá. ¡Nos vemos el jueves!");
+    expect(definiciones().map((d) => d.nombre)).toContain("terminar_sesion");
+  });
+
+  it("sin el pedido, el turno no avisa que hay que cerrar", async () => {
+    const { sesion } = sembrar();
+    const gemini = proveedorFalso("gemini", [{ texto: "¿Seguimos con el baño?" }]);
+    const eventos = await juntar(correrTurno({ sb, sesion, proveedores: [gemini], ahora: AHORA, entrada: { texto: "Hola" } }));
+    expect(eventos.map((e) => e.tipo)).not.toContain("terminar");
+  });
+});

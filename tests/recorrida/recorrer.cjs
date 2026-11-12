@@ -722,6 +722,20 @@ async function main() {
     await pagina.getByText("Vas muy rápido: esperá un minuto y probá de nuevo.").waitFor();
     await fetch(`${FALSO}/__forzar_limite`, { method: "POST", body: JSON.stringify({ clave: "turno", activo: false }) });
     afirmar(true, "al pasarse del límite de frecuencia, el chat muestra un mensaje claro (429)");
+
+    console.log("Terminar la sesión pidiéndoselo al Agente");
+    await guion([
+      { llamadas: [{ nombre: "terminar_sesion", argumentos: {} }] },
+      { texto: "Listo, cerramos acá. ¡Nos vemos!" },
+    ]);
+    await pagina.goto(BASE + "/chat");
+    await pagina.getByLabel("Mensaje para el Agente").fill("Terminá la sesión, por favor");
+    await pagina.getByLabel("Mensaje para el Agente").press("Enter");
+    await pagina.getByText("Listo, cerramos acá. ¡Nos vemos!").waitFor();
+    await pagina.waitForURL(/\/sesiones\/[0-9a-f-]{36}$/, { timeout: 15000 });
+    const cerradaId = pagina.url().split("/").pop();
+    afirmar((await estado()).sessions.find((x) => x.id === cerradaId)?.status === "completada",
+      "al pedirle «terminá la sesión», el Agente se despide y la sesión se cierra sola, sin tocar el botón");
     // Instalación como app y notificaciones: el service worker y el manifest siguen andando con la política nueva.
     const swActivo = await pagina.evaluate(() =>
       Promise.race([navigator.serviceWorker.ready.then((r) => Boolean(r.active)), new Promise((ok) => setTimeout(() => ok(false), 10000))]),

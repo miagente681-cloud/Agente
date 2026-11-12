@@ -29,6 +29,8 @@ export type Contexto = {
   datos: Instantanea;
   /** Cambios hechos en este turno (los va llenando cada herramienta). */
   cambios: Cambio[];
+  /** El usuario pidió terminar la sesión: se cierra cuando el Agente termina de despedirse. */
+  terminar?: boolean;
   mensajeId?: string | null;
 };
 
@@ -446,7 +448,7 @@ export const HERRAMIENTAS = {
 
   guardar_memoria: definir({
     descripcion:
-      "Guarda algo duradero sobre el usuario (cómo trabaja, qué lo frena, qué le funcionó). Para corregir una que ya existe, pasá memoria_id.",
+      "Guarda algo duradero del usuario (cómo trabaja, qué lo frena, qué le sirvió). Para corregir una, pasá memoria_id.",
     esquema: z.object({
       categoria: z.enum([
         "rutina", "preferencia", "objetivo", "obstaculo_recurrente", "solucion_que_funciono", "contexto_personal",
@@ -456,6 +458,16 @@ export const HERRAMIENTAS = {
     }),
     async ejecutar(ctx, a) {
       return guardarMemoria(ctx, a);
+    },
+  }),
+
+  terminar_sesion: definir({
+    descripcion:
+      "Cierra la sesión si el usuario lo pide. Después, despedite en una frase.",
+    esquema: z.object({}),
+    async ejecutar(ctx) {
+      ctx.terminar = true;
+      return { ok: true, nota: "Se cierra al terminar esta respuesta. Despedite en una frase." };
     },
   }),
 
