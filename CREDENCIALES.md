@@ -124,6 +124,8 @@ Ojo con el cupo: según reportes (no oficiales) los modelos Flash gratuitos tien
 
 ## 7. Notificaciones push (claves VAPID) — se generan, no se piden
 
+**Hecho el 12/11/2026:** las tres variables están cargadas en Vercel. Lo de abajo queda por si hay que cambiarlas.
+
 En cualquier computadora con Node:
 
 ```bash
@@ -141,6 +143,8 @@ Imprime una *Public Key* y una *Private Key*.
 **Destraba:** los recordatorios (Configuración → Recordatorios) y el aviso en el celular a la hora de la llamada. **Cómo comprobar:** redesplegá; en el celular (en iPhone, con la app instalada en la pantalla de inicio) Configuración → Notificaciones → Activar → «Enviar una de prueba». Si cambiás las claves más adelante, cada dispositivo tiene que desactivar y volver a activar.
 
 ## 8. Programador de llamadas (secreto del cron) — se genera
+
+**Hecho el 12/11/2026:** `CRON_SECRET` está en Vercel y los dos valores en Supabase; el programador responde 200 cada minuto. Lo de abajo queda por si hay que rehacerlo (si los valores ya existen, se cambian con `vault.update_secret`).
 
 No hace falta ninguna terminal: el secreto se genera dentro de Supabase.
 

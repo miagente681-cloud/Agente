@@ -228,7 +228,7 @@ En producción, Gemini no empezaba a responder a tiempo en ningún turno («sin_
 | Uno por día | Se marca `last_sent_on` antes de enviar, solo si nadie lo marcó: dos corridas no avisan dos veces. Si se cambia la hora o los días, puede volver a sonar ese día. |
 | Si el programador estuvo caído | Un recordatorio con más de 60 minutos de atraso ya no se manda. |
 | Al tocarlo | Abre el chat con el Agente, que es donde se documenta. |
-| Claves | No las generé yo (el sistema de permisos lo impide, para que no pasen por la conversación). El secreto del programador se genera dentro de Supabase con un SQL que corre la persona. `VAPID_SUBJECT` quedó cargada con la dirección de la app. |
+| Claves | Con autorización explícita de la persona, generé las claves VAPID y el secreto del programador y los cargué en Vercel y en Supabase (Vault). `VAPID_SUBJECT` es la dirección de la app. |
 
 ## Despliegue
 
