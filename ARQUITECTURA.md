@@ -7,7 +7,7 @@ Este documento es el mapa del proyecto. Está pensado para que alguien (una pers
 | `ARQUITECTURA.md` (este) | Cómo está armada la app y dónde vive cada cosa |
 | `DECISIONES.md` | Por qué se hizo cada cosa así (historial de decisiones, por fecha) |
 | `CREDENCIALES.md` | Variables de entorno, cómo se cargan y ajustes del panel de Supabase |
-| `README.md` | Puesta en marcha desde cero y comandos |
+| `README.md` | Presentación breve: para qué sirve y cómo se usa |
 | `.env.example` | Lista completa de variables, sin valores |
 
 Última actualización: 12/11/2026.
@@ -255,3 +255,76 @@ Sin confirmar con servicios reales:
 - Correo de ingreso con código: requiere SMTP propio en Supabase; la plantilla está en `supabase/plantillas/`.
 
 Ideas anotadas, sin hacer: seguimiento de compromisos entre sesiones, bot de Telegram, tareas recurrentes, resumen de la mañana, Google Calendar, pasar producción a `main` y tener un entorno de pruebas.
+
+## 15. Puesta en marcha desde cero
+
+### 1. Supabase
+
+1. Creá un proyecto gratuito en supabase.com.
+2. En **SQL Editor**, pegá y ejecutá, en orden, los archivos de `supabase/migrations/`.
+3. En **Authentication → URL Configuration**:
+   - *Site URL*: la dirección de la app (por ejemplo `https://miagente.vercel.app`).
+   - *Redirect URLs*: agregá `https://TU-DOMINIO/auth/confirmar` y `http://localhost:3000/auth/confirmar`.
+4. **Correo con código (requiere SMTP propio).** En el plan gratuito, Supabase no deja cambiar la plantilla del correo mientras se use su servicio de envío integrado: el correo trae solo el enlace. Para que también traiga el código (necesario para entrar desde la app instalada en iPhone), configurá un SMTP gratuito en **Authentication → Emails → SMTP Settings** y después usá este cuerpo en las plantillas **Magic Link** y **Confirm signup**:
+
+   ```html
+   <h2>Tu acceso a MiAgente</h2>
+   <p>Tu código es: <strong>{{ .Token }}</strong></p>
+   <p>O entrá con este enlace:
+     <a href="{{ .SiteURL }}/auth/confirmar?token_hash={{ .TokenHash }}&type=email">Ingresar</a>
+   </p>
+   ```
+
+5. En **Project Settings → API** copiá la URL del proyecto, la clave pública y la clave de servicio.
+
+El envío integrado de Supabase permite 2 correos por hora. Con SMTP propio ese límite deja de aplicar.
+
+### 2. Variables de entorno
+
+Copiá `.env.example` a `.env.local`. Con las tres de Supabase la app ya arranca; el resto se explica en `CREDENCIALES.md`. Ninguna clave va en el código; al navegador solo llegan las que empiezan con `NEXT_PUBLIC_`.
+
+### 3. Correr en tu computadora
+
+```bash
+npm install
+```
+
+```bash
+npm run dev
+```
+
+### 4. Desplegar en Vercel
+
+Importá el repositorio en Vercel (plan Hobby), cargá las mismas variables en **Settings → Environment Variables** y desplegá.
+
+## 16. Video promocional
+
+`promo/` arma un video vertical (1080×1920, unos 35 segundos) con capturas reales de la app y textos en pantalla. Necesita Playwright y ffmpeg, y el mismo build que la recorrida.
+
+```bash
+node promo/capturar.cjs
+```
+
+```bash
+node promo/render.cjs
+```
+
+El resultado queda en `promo/salida/miagente-promo.mp4`. Los textos y los tiempos se cambian en `promo/video.html`.
+
+Para sumarle locución se usa Piper, un motor de voz libre que corre en la máquina (sin servicios externos). Se genera un audio por escena y el video se arma con cada escena durando lo que dura su frase:
+
+```bash
+pip install piper-tts
+```
+
+```bash
+PIPER_MODELO=/ruta/a/la-voz.onnx node promo/locucion.cjs
+```
+
+```bash
+node promo/render.cjs
+```
+
+Con los audios en `promo/locucion/`, el resultado es `promo/salida/miagente-promo-con-voz.mp4`. Las frases están en `promo/locucion.cjs`.
+
+Los tres guiones aceptan un nombre para armar otra versión con sus propios datos, textos y frases. Hoy existe `guzman` (un video en joda): `node promo/capturar.cjs guzman`, `node promo/locucion.cjs guzman` y `node promo/render.cjs guzman`.
