@@ -52,16 +52,30 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const destino = new URL(event.notification.data?.url || "/hoy", self.location.origin).href;
-  event.waitUntil(
-    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((ventanas) => {
-      for (const ventana of ventanas) {
-        if ("focus" in ventana) {
-          ventana.navigate(destino).catch(() => {});
-          return ventana.focus();
-        }
-      }
-      return self.clients.openWindow(destino);
-    }),
-  );
+  let destino = new URL(event.notification.data?.url || "/hoy", self.location.origin);
+  // Solo páginas de la propia app.
+  if (destino.origin !== self.location.origin) destino = new URL("/hoy", self.location.origin);
+  event.waitUntil(abrirEnLaApp(destino));
 });
+
+/**
+ * Lleva a la página del aviso (por ejemplo, la llamada). Si la app ya está
+ * abierta, la trae al frente y cambia de página; si no, la abre ahí.
+ * No todos los navegadores dejan cambiar de página desde el service worker
+ * (WindowClient.navigate): en ese caso se le pide a la propia app que lo haga
+ * (ver components/registrar-sw.tsx).
+ */
+async function abrirEnLaApp(destino) {
+  const ventanas = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+  const ventana = ventanas.find((v) => "focus" in v);
+  if (!ventana) return self.clients.openWindow(destino.href);
+  const enfocada = (await ventana.focus().catch(() => null)) || ventana;
+  if (typeof enfocada.navigate === "function") {
+    try {
+      if (await enfocada.navigate(destino.href)) return;
+    } catch {
+      // Sigue con el mensaje a la app.
+    }
+  }
+  enfocada.postMessage({ tipo: "abrir", ruta: destino.pathname + destino.search });
+}

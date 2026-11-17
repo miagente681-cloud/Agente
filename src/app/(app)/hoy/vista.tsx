@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { EstadoLlamadas } from "@/components/estado-llamadas";
 import { EstadoDatos, Filtro } from "@/components/filtro";
 import { AltaRapida } from "@/components/tareas/alta-rapida";
 import { ListaTareas } from "@/components/tareas/fila-tarea";
@@ -66,6 +67,7 @@ export function VistaHoy() {
         <EstadoDatos />
       ) : (
         <div className="flex flex-col gap-5">
+          <EstadoLlamadas />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div role="tablist" aria-label="Rango" className="flex rounded-md border border-borde bg-panel p-0.5">
               {(["hoy", "semana"] as const).map((r) => (

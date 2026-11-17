@@ -230,6 +230,23 @@ En producción, Gemini no empezaba a responder a tiempo en ningún turno («sin_
 | Al tocarlo | Abre el chat con el Agente, que es donde se documenta. |
 | Claves | Con autorización explícita de la persona, generé las claves VAPID y el secreto del programador y los cargué en Vercel y en Supabase (Vault). `VAPID_SUBJECT` es la dirección de la app. |
 
+## Las llamadas llegan solo por notificación push (pedido el 17/11/2026)
+
+La persona eligió que las llamadas se avisen únicamente con push en la app instalada (la tiene en el iPhone). Se evaluaron y descartaron: llamar a su número de teléfono (los proveedores de telefonía cobran por número y por minuto, y el audio del teléfono no entra en las funciones de Vercel), un link por correo a una reunión de Meet o Zoom (meter al Agente en esas reuniones requiere bots pagos), el correo como aviso y un bot de Telegram.
+
+Lo que había el 17/11: las 7 fases hechas, el programador corriendo cada minuto y un iPhone suscripto. El 12 y 13/11 se avisaron 6 llamadas y ninguna se atendió; después la persona borró sus rutinas. El programador no guardaba si cada aviso le llegaba al servicio de Apple, así que no había forma de saber si sonaron.
+
+| Tema | Decisión |
+|---|---|
+| Registro de entrega | Migración 0007: `push_subscriptions` guarda `ultimo_envio_at`, `ultimo_resultado` (`entregado` o `fallo`) y `ultimo_detalle` (código y motivo del servicio de push, por ejemplo `403 BadJwtToken`; nunca la dirección ni las claves). Lo escriben el programador, la notificación de prueba y la llamada de prueba. «Entregado» quiere decir que el servicio de push lo aceptó; que el teléfono lo muestre ya depende de él. |
+| Quién puede escribir esas columnas | La persona también (RLS de la tabla): las reinicia al volver a activar las notificaciones. Es solo diagnóstico, no protege plata ni cupos, así que no hace falta un disparador que lo impida. |
+| Registro en el servidor | Cada envío fallido deja una línea `[push]` con el servicio (por ejemplo `web.push.apple.com`) y el motivo, sin datos de la persona. |
+| Configuración → Notificaciones | Lista los dispositivos con el resultado del último aviso («entregado hace 2 h» o por qué falló) y marca cuál es este. Botones: «Recibir una llamada de prueba» y «Enviar una notificación de prueba». |
+| Llamada de prueba | `POST /api/push/llamada-prueba`: el servidor crea una llamada programada para ese minuto (con la clave de servicio, porque la base no deja que la persona cree llamadas) y la avisa por push al instante. Foco «repaso muy breve», 3 minutos. No se reprograma: si no se atiende, se da por perdida. No se crea si ya hay una llamada esperando (lleva a esa). Límite: 1 por minuto y 5 por día (`LIMITE_LLAMADA_PRUEBA`), porque si se atiende usa el modelo de las llamadas. |
+| Aviso en Hoy | Si no hay ninguna rutina: «Tu Agente todavía no te llama», con un link a las rutinas (se puede ocultar; queda guardado en el navegador). Si hay rutinas activas y ningún dispositivo con notificaciones, o todos fallaron en el último aviso: aviso destacado con un link a Notificaciones. Con las rutinas pausadas no se avisa nada. |
+| Tocar la notificación con la app abierta | El service worker trae la app al frente y cambia de página con `WindowClient.navigate()`. No pude confirmar que Safari en iPhone lo tenga; si no está o falla, le manda un mensaje a la app y la app navega sola a la llamada (`registrar-sw.tsx`). Con la app cerrada, la abre directo en la llamada. |
+| El Agente sin rutinas | Si la persona no tiene ninguna rutina, el contexto le dice al Agente que puede proponer armar una en Configuración. No se le dio una herramienta para crearlas: las definiciones de herramientas están en 6.997 de los 7.000 caracteres que permite el cupo de Groq. |
+
 ## Despliegue
 
 - **Proyecto de Vercel `miagente`** (equipo MiAgente), enlazado a `miagente681-cloud/Agente`. El repo estaba vacío: el código de la fase 1 se trajo desde `Emontone21/MiAg` con su historial.

@@ -10,7 +10,7 @@ Este documento es el mapa del proyecto. Está pensado para que alguien (una pers
 | `README.md` | Presentación breve: para qué sirve y cómo se usa |
 | `.env.example` | Lista completa de variables, sin valores |
 
-Última actualización: 12/11/2026.
+Última actualización: 17/11/2026.
 
 ---
 
@@ -93,7 +93,7 @@ Las migraciones de `supabase/migrations/` son la fuente de verdad. Todas las tab
 | `change_log` | Cada cambio del Agente, con el valor anterior, para deshacer | El servidor |
 | `call_routines`, `availability_windows` | Rutinas de llamada y franjas de disponibilidad | La persona |
 | `reminders` | Recordatorios push: hora, días, texto | La persona; el programador marca `last_sent_on` |
-| `push_subscriptions` | Dispositivos con notificaciones activadas | La persona (solo destinos de push reales) |
+| `push_subscriptions` | Dispositivos con notificaciones activadas, y el resultado del último aviso (`ultimo_envio_at`, `ultimo_resultado`, `ultimo_detalle`) | La persona (solo destinos de push reales); el servidor anota cada envío |
 | `llm_usage` | Cada pedido a Claude con su costo | **Solo el servidor** (clave de servicio). La persona solo lee |
 | `voice_usage` | Uso mensual de Azure | **Solo el servidor** |
 | `limites_frecuencia` | Contadores del límite de frecuencia | **Solo el servidor** |
@@ -161,8 +161,12 @@ Claude es el único proveedor pago. Las reglas están en `claude/` y en `segurid
   3. Para cada persona, aplica lo que decide `horarios.ts` → `decidir()`: crear la llamada del día, notificarla, reprogramarla si no atendió o darla por perdida.
 - **La lógica de horarios es pura** (`horarios.ts`): recibe la hora y los datos, devuelve acciones. Todo en la zona horaria del perfil. Se prueba sin reloj ni base.
 - **Push:** `push/servidor.ts` envía con 5 s de máximo por envío; cada corrida tiene 20 s en total para envíos. Solo se envía a hosts de servicios de push reales (`push/destinos.ts`, y la misma lista está en una restricción de la base: si se cambia una, cambiar la otra).
+- **Las llamadas solo se avisan por push** (no hay teléfono, correo ni Telegram; ver `DECISIONES.md`). Cada envío queda anotado en el dispositivo con `tick.ts` → `anotarEnvio()`: entregado, o el código y motivo del fallo. Configuración → Notificaciones lo muestra, y Hoy avisa si las llamadas no van a llegar (`components/estado-llamadas.tsx`).
+- **Al tocar la notificación** (`public/sw.js`): con la app cerrada la abre en la llamada; abierta, la trae al frente y cambia de página, o le pide a la app que lo haga (`components/registrar-sw.tsx`) si el navegador no deja hacerlo desde el service worker.
 
 Para ver si el programador anda: `select status_code, content from net._http_response order by created desc limit 5;` (200 = bien, 401 = el secreto no coincide, 503 = falta una variable en Vercel).
+
+Para ver si los avisos llegan: `select device_label, ultimo_envio_at, ultimo_resultado, ultimo_detalle from push_subscriptions;`. Un `403 BadJwtToken` de Apple suele indicar claves VAPID cambiadas o un `VAPID_SUBJECT` que no es `https://…` ni `mailto:…`.
 
 ## 9. Endpoints
 
@@ -177,6 +181,7 @@ Todos validan la sesión con `usuarioActual()` (JWT verificado). Los que gastan 
 | `POST /api/voice/token` | Token corto de Azure Speech |
 | `POST /api/voice/uso` | Suma segundos de reconocimiento al cupo |
 | `POST /api/push/probar` | Notificación de prueba |
+| `POST /api/push/llamada-prueba` | Crea una llamada para ahora y la avisa por push (para probar todo el circuito en el teléfono) |
 | `GET /api/estado` | Qué funciones tiene el despliegue (el detalle, solo para quien administra) |
 | `POST /api/cuenta/borrar` | Borra todos los datos de quien lo pide |
 | `POST /api/cron/tick` | El programador. No usa sesión: se protege con `CRON_SECRET` |
@@ -239,8 +244,8 @@ Antes de subir un cambio tienen que pasar las cuatro cosas. Los servicios de men
 
 - **Desplegar:** un `git push` a `claude/pensive-galileo-w7i9nk` despliega producción en Vercel. No hay entorno de pruebas separado: todo push va a la app en uso. La rama `main` existe pero está atrasada.
 - **Variables:** una variable nueva o cambiada en Vercel recién se aplica al volver a desplegar.
-- **Migraciones:** se aplican a mano en Supabase (SQL Editor o la API de administración), en orden. Hasta hoy están aplicadas de la 0001 a la 0006.
-- **Registros:** Vercel (plan Hobby) guarda solo la última hora. El servidor escribe líneas `[agente]` cuando un proveedor falla y `[claude]` por cada pedido (tokens y costo, sin datos de la persona).
+- **Migraciones:** se aplican a mano en Supabase (SQL Editor o la API de administración), en orden. Hasta hoy están aplicadas de la 0001 a la 0007.
+- **Registros:** Vercel (plan Hobby) guarda solo la última hora. El servidor escribe líneas `[agente]` cuando un proveedor falla, `[claude]` por cada pedido (tokens y costo, sin datos de la persona) y `[push]` cuando un aviso no se pudo entregar.
 - **Costo:** todo es gratuito salvo Claude. No activar facturación en ningún otro proveedor.
 
 ## 14. Estado y pendientes (12/11/2026)
@@ -250,11 +255,11 @@ Funciona en producción: panel, ingreso con contraseña, chat con Gemini y Groq,
 Sin confirmar con servicios reales:
 
 - Claude en producción (la lista de correos permitidos se cargó; falta que la persona pruebe «Probar conexión»).
-- Una notificación push real en un teléfono, recordatorios incluidos.
+- Una notificación push real en un teléfono, recordatorios incluidos. Desde el 17/11 se puede comprobar con «Recibir una llamada de prueba» en Configuración, y el resultado de cada envío queda en `push_subscriptions`.
 - Azure Speech (no está configurado).
 - Correo de ingreso con código: requiere SMTP propio en Supabase; la plantilla está en `supabase/plantillas/`.
 
-Ideas anotadas, sin hacer: seguimiento de compromisos entre sesiones, bot de Telegram, tareas recurrentes, resumen de la mañana, Google Calendar, pasar producción a `main` y tener un entorno de pruebas.
+Ideas anotadas, sin hacer: seguimiento de compromisos entre sesiones, tareas recurrentes, resumen de la mañana, Google Calendar, pasar producción a `main` y tener un entorno de pruebas. Descartado: avisar las llamadas por teléfono, correo o Telegram (la persona eligió solo push).
 
 ## 15. Puesta en marcha desde cero
 

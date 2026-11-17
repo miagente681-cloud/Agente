@@ -31,6 +31,17 @@ export async function estadoPush(): Promise<EstadoPush> {
   return (await registro?.pushManager.getSubscription()) ? "activo" : "sin_permiso";
 }
 
+/** La dirección de push de este dispositivo, para marcarlo en la lista de Configuración. */
+export async function endpointDeEsteDispositivo(): Promise<string | null> {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) return null;
+  try {
+    const registro = await navigator.serviceWorker.getRegistration();
+    return (await registro?.pushManager.getSubscription())?.endpoint ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function claveABytes(base64url: string): Uint8Array<ArrayBuffer> {
   const relleno = "=".repeat((4 - (base64url.length % 4)) % 4);
   const crudo = atob((base64url + relleno).replace(/-/g, "+").replace(/_/g, "/"));
@@ -78,7 +89,16 @@ export async function activarPush(clavePublica: string): Promise<{ ok: boolean; 
     const { error } = await supabaseBrowser()
       .from("push_subscriptions")
       .upsert(
-        { endpoint: datos.endpoint, p256dh: datos.keys?.p256dh, auth: datos.keys?.auth, device_label: nombreDispositivo() },
+        {
+          endpoint: datos.endpoint,
+          p256dh: datos.keys?.p256dh,
+          auth: datos.keys?.auth,
+          device_label: nombreDispositivo(),
+          // Al volver a activar, el diagnóstico del último envío empieza de cero.
+          ultimo_envio_at: null,
+          ultimo_resultado: null,
+          ultimo_detalle: null,
+        },
         { onConflict: "endpoint" },
       );
     if (error) return { ok: false, mensaje: "No se pudo guardar la suscripción. Probá de nuevo." };

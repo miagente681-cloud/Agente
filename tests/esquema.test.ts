@@ -354,6 +354,35 @@ describe("auditoría de seguridad: lo que un usuario común ya no puede hacer", 
     });
   });
 
+  it("guarda el resultado del último aviso de cada dispositivo, solo con valores conocidos", async () => {
+    await como(ANA, async () => {
+      const endpoint = "https://web.push.apple.com/diagnostico";
+      await db.query("insert into public.push_subscriptions (endpoint, p256dh, auth) values ($1, 'p', 'a')", [endpoint]);
+      const { rows } = await db.query<{ ultimo_resultado: string | null }>(
+        "select ultimo_resultado from public.push_subscriptions where endpoint = $1",
+        [endpoint],
+      );
+      expect(rows).toEqual([{ ultimo_resultado: null }]);
+      await expect(
+        db.query("update public.push_subscriptions set ultimo_resultado = 'quizas' where endpoint = $1", [endpoint]),
+      ).rejects.toThrow(/push_ultimo_resultado/);
+      await expect(
+        db.query("update public.push_subscriptions set ultimo_detalle = repeat('x', 201) where endpoint = $1", [endpoint]),
+      ).rejects.toThrow(/push_ultimo_detalle_largo/);
+      // Al volver a activar las notificaciones, la persona reinicia el diagnóstico de su dispositivo.
+      await db.query(
+        "update public.push_subscriptions set ultimo_envio_at = now(), ultimo_resultado = 'fallo', ultimo_detalle = '403 BadJwtToken' where endpoint = $1",
+        [endpoint],
+      );
+      await db.query("update public.push_subscriptions set ultimo_envio_at = null, ultimo_resultado = null, ultimo_detalle = null where endpoint = $1", [endpoint]);
+    });
+    // Otra persona no ve ni toca ese diagnóstico.
+    await como(BETO, async () => {
+      const { rows } = await db.query("select 1 from public.push_subscriptions where endpoint = 'https://web.push.apple.com/diagnostico'");
+      expect(rows).toEqual([]);
+    });
+  });
+
   it("tiene un máximo de suscripciones, rutinas y ventanas por usuario", async () => {
     await como(BETO, async () => {
       for (let i = 0; i < 10; i++) {

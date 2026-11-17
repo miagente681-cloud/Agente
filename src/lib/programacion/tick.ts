@@ -10,7 +10,32 @@ import { ajustesDe, cuandoLegible, decidir, recordatoriosPendientes, type Record
 
 export type CargaPush = { titulo: string; cuerpo: string; url: string; etiqueta: string; persistente?: boolean };
 export type Suscripcion = { endpoint: string; p256dh: string; auth: string };
-export type EnviarPush = (suscripcion: Suscripcion, carga: CargaPush) => Promise<"ok" | "vencida" | "error">;
+/**
+ * Resultado de un envío. «ok» quiere decir que el servicio de push (Apple,
+ * Google…) aceptó el aviso; que el teléfono lo muestre depende de él.
+ */
+export type ResultadoEnvio = { estado: "ok" | "vencida" | "error"; detalle?: string };
+export type EnviarPush = (suscripcion: Suscripcion, carga: CargaPush) => Promise<ResultadoEnvio>;
+
+/**
+ * Guarda en el dispositivo el resultado de su último envío, para poder ver en
+ * Configuración si los avisos llegan. Si el servicio dice que la suscripción
+ * venció, se borra.
+ */
+export async function anotarEnvio(sb: SupabaseClient, endpoint: string, r: ResultadoEnvio, cuando: string): Promise<void> {
+  if (r.estado === "vencida") {
+    await sb.from("push_subscriptions").delete().eq("endpoint", endpoint);
+    return;
+  }
+  await sb
+    .from("push_subscriptions")
+    .update({
+      ultimo_envio_at: cuando,
+      ultimo_resultado: r.estado === "ok" ? "entregado" : "fallo",
+      ultimo_detalle: r.estado === "ok" ? null : (r.detalle ?? "error desconocido").slice(0, 200),
+    })
+    .eq("endpoint", endpoint);
+}
 
 export type ResumenTick = {
   creadas: number;
@@ -82,11 +107,9 @@ export async function correrTick(p: {
             continue;
           }
           const resultado = await enviar(s, aviso);
-          if (resultado === "ok") enviados++;
-          if (resultado === "vencida") {
-            await admin.from("push_subscriptions").delete().eq("endpoint", s.endpoint);
-            break;
-          }
+          await anotarEnvio(admin, s.endpoint, resultado, new Date(reloj()).toISOString());
+          if (resultado.estado === "ok") enviados++;
+          if (resultado.estado === "vencida") break;
         }
       }),
     );

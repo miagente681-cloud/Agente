@@ -19,6 +19,8 @@ export const LIMITES = {
   voz_token: { porMinuto: 6, porDia: 60 },
   voz_uso: { porMinuto: 10, porDia: 2000 },
   push_probar: { porMinuto: 3, porDia: 20 },
+  // Cada llamada de prueba que se atiende usa el modelo de las llamadas.
+  llamada_prueba: { porMinuto: 1, porDia: 5 },
 } as const;
 export type ClaveLimite = keyof typeof LIMITES;
 

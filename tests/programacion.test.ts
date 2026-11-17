@@ -184,9 +184,10 @@ describe("el programador, minuto a minuto", () => {
   let admin: SupabaseClient;
   let enviados: { endpoint: string; carga: CargaPush }[];
   const enviar: EnviarPush = async (s, carga) => {
-    if (s.endpoint.includes("vencida")) return "vencida";
+    if (s.endpoint.includes("vencida")) return { estado: "vencida", detalle: "410" };
+    if (s.endpoint.includes("rechaza")) return { estado: "error", detalle: "403 BadJwtToken" };
     enviados.push({ endpoint: s.endpoint, carga });
-    return "ok";
+    return { estado: "ok" };
   };
   const tick = (iso: string, conPush = true) => correrTick({ admin, ahora: z(iso), enviar: conPush ? enviar : null });
   const sesiones = () => servidor.estado().sessions;
@@ -242,6 +243,22 @@ describe("el programador, minuto a minuto", () => {
     expect(await tick("2026-11-10T13:41:00Z")).toMatchObject({ creadas: 0, perdidas: 0 });
   });
 
+  it("anota en cada dispositivo si el aviso se entregó o por qué falló", async () => {
+    servidor.sembrar("push_subscriptions", { endpoint: "https://web.push.apple.com/rechaza", p256dh: "p", auth: "a" });
+    await tick("2026-11-10T11:00:00Z");
+    await tick("2026-11-10T12:00:20Z");
+    const porEndpoint = Object.fromEntries(servidor.estado().push_subscriptions.map((s) => [s.endpoint, s]));
+    expect(porEndpoint["https://fcm.googleapis.com/fcm/send/celular"]).toMatchObject({
+      ultimo_resultado: "entregado", ultimo_detalle: null,
+    });
+    expect(porEndpoint["https://fcm.googleapis.com/fcm/send/celular"].ultimo_envio_at).toBeTruthy();
+    expect(porEndpoint["https://web.push.apple.com/rechaza"]).toMatchObject({
+      ultimo_resultado: "fallo", ultimo_detalle: "403 BadJwtToken",
+    });
+    // La vencida se borra en lugar de anotarse.
+    expect(porEndpoint["https://fcm.googleapis.com/fcm/send/vencida"]).toBeUndefined();
+  });
+
   it("si atiendo la llamada, no la reprograma; si queda abierta horas, la cierra", async () => {
     await tick("2026-11-10T11:00:00Z");
     await tick("2026-11-10T12:00:20Z");
@@ -284,7 +301,7 @@ describe("el programador, minuto a minuto", () => {
     const lento: EnviarPush = async (s, carga) => {
       ahora += 30_000; // cada envío "tarda" 30 s
       enviados.push({ endpoint: s.endpoint, carga });
-      return "ok";
+      return { estado: "ok" };
     };
     servidor.sembrar("push_subscriptions", { endpoint: "https://updates.push.services.mozilla.com/wpush/v2/otro", p256dh: "p", auth: "a" });
     const r = await correrTick({ admin, ahora: z("2026-11-10T12:10:30Z"), enviar: lento, tiempoEnviosMs: 20_000, reloj: () => ahora });

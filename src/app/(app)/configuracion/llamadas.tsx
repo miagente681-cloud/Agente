@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Boton } from "@/components/ui/boton";
@@ -10,7 +11,7 @@ import { estadoApp, type EstadoApp } from "@/lib/agente/cliente";
 import { useDatos } from "@/lib/datos/almacen";
 import { usePerfil } from "@/lib/datos/perfil";
 import { AJUSTES_POR_DEFECTO, ajustesDe, VENTANA_POR_DEFECTO } from "@/lib/programacion/horarios";
-import { activarPush, desactivarPush, estadoPush, type EstadoPush } from "@/lib/push/cliente";
+import { activarPush, desactivarPush, endpointDeEsteDispositivo, estadoPush, type EstadoPush } from "@/lib/push/cliente";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { ConfigRecordatorios } from "./recordatorios";
 
@@ -36,14 +37,71 @@ const DIAS = [
   { n: 0, corto: "D", largo: "Domingo" },
 ];
 
+type Dispositivo = {
+  endpoint: string;
+  device_label: string | null;
+  created_at: string;
+  ultimo_envio_at: string | null;
+  ultimo_resultado: "entregado" | "fallo" | null;
+  ultimo_detalle: string | null;
+};
+
+function haceCuanto(iso: string): string {
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (min < 1) return "recién";
+  if (min < 60) return `hace ${min} min`;
+  const horas = Math.round(min / 60);
+  if (horas < 24) return `hace ${horas} h`;
+  const dias = Math.round(horas / 24);
+  return dias === 1 ? "ayer" : `hace ${dias} días`;
+}
+
+/** Explicación para la persona de por qué un aviso no llegó al servicio de push. */
+function explicarFallo(detalle: string | null): string {
+  if (!detalle) return "no se pudo entregar.";
+  if (/^403/.test(detalle)) {
+    return `el servicio de notificaciones lo rechazó (${detalle}). Suele pasar si cambiaron las claves del servidor: desactivá y volvé a activar en ese dispositivo.`;
+  }
+  if (/^(429|5\d\d)/.test(detalle) || /sin respuesta/.test(detalle)) {
+    return `el servicio de notificaciones no respondió (${detalle}). Suele ser pasajero.`;
+  }
+  return `no se pudo entregar (${detalle}).`;
+}
+
+/** Los dispositivos con notificaciones de la persona, y cuál es este. */
+async function leerDispositivos(): Promise<{ lista: Dispositivo[]; propio: string | null }> {
+  const [{ data }, propio] = await Promise.all([
+    supabaseBrowser()
+      .from("push_subscriptions")
+      .select("endpoint,device_label,created_at,ultimo_envio_at,ultimo_resultado,ultimo_detalle")
+      .order("created_at"),
+    endpointDeEsteDispositivo(),
+  ]);
+  return { lista: (data as Dispositivo[] | null) ?? [], propio };
+}
+
 function Notificaciones({ estado }: { estado: EstadoApp | null }) {
   const { avisar } = useDatos();
+  const router = useRouter();
   const [push, setPush] = useState<EstadoPush | null>(null);
   const [ocupado, setOcupado] = useState(false);
+  const [dispositivos, setDispositivos] = useState<Dispositivo[] | null>(null);
+  const [esteEndpoint, setEsteEndpoint] = useState<string | null>(null);
+
+  const cargarDispositivos = useCallback(async () => {
+    const r = await leerDispositivos();
+    setDispositivos(r.lista);
+    setEsteEndpoint(r.propio);
+  }, []);
 
   useEffect(() => {
     let vigente = true;
     void estadoPush().then((p) => vigente && setPush(p));
+    void leerDispositivos().then((r) => {
+      if (!vigente) return;
+      setDispositivos(r.lista);
+      setEsteEndpoint(r.propio);
+    });
     return () => {
       vigente = false;
     };
@@ -54,34 +112,79 @@ function Notificaciones({ estado }: { estado: EstadoApp | null }) {
     const r = await activarPush(estado?.vapid ?? "");
     if (!r.ok) avisar(r.mensaje ?? "No se pudo activar.");
     setPush(await estadoPush());
+    await cargarDispositivos();
     setOcupado(false);
   }
   async function desactivar() {
     setOcupado(true);
     await desactivarPush();
     setPush(await estadoPush());
+    await cargarDispositivos();
     setOcupado(false);
   }
   async function probar() {
+    setOcupado(true);
     const r = await fetch("/api/push/probar", { method: "POST" }).then((x) => x.json()).catch(() => null);
+    await cargarDispositivos();
+    setOcupado(false);
     avisar(
       r?.ok
-        ? "Enviada. Tendría que llegarte en unos segundos."
+        ? "Enviada. Tendría que llegarte en unos segundos; si no aparece, revisá los modos de concentración del teléfono."
         : r?.motivo === "sin_dispositivos"
           ? "No hay ningún dispositivo con notificaciones activadas."
-          : "No se pudo enviar la notificación de prueba.",
+          : (r?.error ?? `No se pudo enviar la notificación de prueba${r?.detalle ? ` (${r.detalle})` : ""}.`),
+    );
+  }
+  async function llamadaDePrueba() {
+    setOcupado(true);
+    const r = await fetch("/api/push/llamada-prueba", { method: "POST" }).then((x) => x.json()).catch(() => null);
+    await cargarDispositivos();
+    setOcupado(false);
+    if (r?.motivo === "en_espera" && r.id) {
+      avisar("Ya hay una llamada esperando: te llevo a atenderla.");
+      router.push(`/llamada/${r.id}`);
+      return;
+    }
+    avisar(
+      r?.ok
+        ? "Te estoy llamando: podés bloquear el teléfono y atender desde la notificación."
+        : r?.motivo === "sin_dispositivos"
+          ? "Primero activá las notificaciones en este dispositivo."
+          : (r?.error ?? `No se pudo hacer la llamada de prueba${r?.detalle ? ` (${r.detalle})` : ""}.`),
     );
   }
 
   return (
     <Tarjeta>
-      <h2 className="rotulo mb-1 flex items-center gap-2">
+      <h2 id="notificaciones" className="rotulo mb-1 flex scroll-mt-6 items-center gap-2">
         Notificaciones
         {push ? <Etiqueta tono={push === "activo" ? "ok" : "neutro"}>{push === "activo" ? "Activas en este dispositivo" : "Inactivas acá"}</Etiqueta> : null}
       </h2>
       <p className="mb-3 text-sm text-texto-2">
-        A la hora de una llamada te llega una notificación y al tocarla entrás directo. Se activan por dispositivo.
+        Las llamadas te llegan como notificación: al tocarla entrás directo a hablar con el Agente. Se activan por dispositivo; en
+        iPhone, desde la app instalada en la pantalla de inicio.
       </p>
+      {dispositivos?.length ? (
+        <ul aria-label="Dispositivos con notificaciones" className="mb-4 flex flex-col divide-y divide-borde rounded-md border border-borde">
+          {dispositivos.map((d) => (
+            <li key={d.endpoint} className="flex flex-col gap-0.5 px-3 py-2.5">
+              <p className="text-sm font-medium">
+                {d.device_label ?? "Dispositivo"}
+                {d.endpoint === esteEndpoint ? <span className="font-normal text-texto-3"> · este</span> : null}
+              </p>
+              <p className={`text-[13px] ${d.ultimo_resultado === "fallo" ? "text-peligro" : "text-texto-2"}`}>
+                {!d.ultimo_envio_at
+                  ? "Todavía no se le mandó ningún aviso."
+                  : d.ultimo_resultado === "entregado"
+                    ? `Último aviso entregado ${haceCuanto(d.ultimo_envio_at)}.`
+                    : `Último aviso ${haceCuanto(d.ultimo_envio_at)}: ${explicarFallo(d.ultimo_detalle)}`}
+              </p>
+            </li>
+          ))}
+        </ul>
+      ) : dispositivos ? (
+        <p className="mb-3 text-[13px] text-aviso">Ningún dispositivo tiene las notificaciones activadas: las llamadas no te van a llegar.</p>
+      ) : null}
       {estado && !estado.push ? (
         <p className="mb-3 text-[13px] text-aviso">
           Faltan las claves de notificaciones en el servidor: por ahora el aviso solo aparece dentro de la app.{" "}
@@ -104,7 +207,8 @@ function Notificaciones({ estado }: { estado: EstadoApp | null }) {
         <div className="flex flex-wrap gap-2">
           {push === "activo" ? (
             <>
-              <Boton onClick={probar} disabled={!estado?.push}>Enviar una de prueba</Boton>
+              <Boton variante="primario" onClick={llamadaDePrueba} disabled={ocupado || !estado?.push}>Recibir una llamada de prueba</Boton>
+              <Boton onClick={probar} disabled={ocupado || !estado?.push}>Enviar una notificación de prueba</Boton>
               <Boton variante="fantasma" onClick={desactivar} disabled={ocupado}>Desactivar en este dispositivo</Boton>
             </>
           ) : (
@@ -291,7 +395,7 @@ export function ConfigLlamadas() {
   return (
     <>
       <Tarjeta>
-        <h2 className="rotulo mb-1">Rutinas de llamada</h2>
+        <h2 id="rutinas" className="rotulo mb-1 scroll-mt-6">Rutinas de llamada</h2>
         <p className="mb-4 text-sm text-texto-2">
           Las llamadas las inicia el Agente en estos horarios (en tu zona horaria). Para hablar en otro momento, usá «Hablar» en la pantalla del Agente.
         </p>

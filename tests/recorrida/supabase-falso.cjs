@@ -60,6 +60,7 @@ function crearServidor() {
     tasks: () => ({ parent_id: null, description: null, status: "pendiente", priority: 2, due_date: null, due_set_by: null, effort_minutes: null, blocked_reason: null, sort_order: 0, completed_at: null, archived_at: null, status_changed_at: ahora() }),
     reminders: () => ({ message: "Entrá a documentar tu día.", weekdays: [1, 2, 3, 4, 5], active: true, last_sent_on: null }),
     call_routines: () => ({ weekdays: [], target_minutes: 10, focus: null, active: true }),
+    push_subscriptions: () => ({ device_label: null, ultimo_envio_at: null, ultimo_resultado: null, ultimo_detalle: null }),
     sessions: () => ({ status: "en_curso", routine_id: null, rescheduled_from: null, scheduled_at: null, notified_at: null, started_at: null, ended_at: null, summary: null, commitments: [], reschedule_count: 0, providers_used: [], history_summary: null, history_summary_until: null, target_minutes: null, focus: null }),
     messages: () => ({ content: null, tool_calls: null, tool_result: null, provider: null, model: null, tokens_in: null, tokens_out: null }),
     project_log: () => ({ kind: "nota", author: "usuario", session_id: null }),

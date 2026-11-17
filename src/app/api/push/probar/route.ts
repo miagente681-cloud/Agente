@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { destinoPushValido } from "@/lib/push/destinos";
 import { emisorPush } from "@/lib/push/servidor";
-import type { Suscripcion } from "@/lib/programacion/tick";
+import { anotarEnvio, type Suscripcion } from "@/lib/programacion/tick";
 import { frenarSiHaceFalta } from "@/lib/seguridad/frecuencia";
 import { supabaseServer, usuarioActual } from "@/lib/supabase/server";
 
@@ -19,6 +19,7 @@ export async function POST() {
   const suscripciones = ((data ?? []) as Suscripcion[]).filter((s) => destinoPushValido(s.endpoint));
   if (!suscripciones.length) return NextResponse.json({ ok: false, motivo: "sin_dispositivos" });
   let enviadas = 0;
+  let detalle: string | undefined;
   for (const s of suscripciones) {
     const r = await enviar(s, {
       titulo: "MiAgente",
@@ -26,8 +27,10 @@ export async function POST() {
       url: "/configuracion",
       etiqueta: "prueba",
     });
-    if (r === "ok") enviadas++;
-    if (r === "vencida") await sb.from("push_subscriptions").delete().eq("endpoint", s.endpoint);
+    // Queda anotado en el dispositivo: Configuración muestra si los avisos llegan.
+    await anotarEnvio(sb, s.endpoint, r, new Date().toISOString());
+    if (r.estado === "ok") enviadas++;
+    else detalle ??= r.detalle;
   }
-  return NextResponse.json({ ok: enviadas > 0, enviadas, motivo: enviadas ? undefined : "fallo" });
+  return NextResponse.json({ ok: enviadas > 0, enviadas, motivo: enviadas ? undefined : "fallo", detalle: enviadas ? undefined : detalle });
 }

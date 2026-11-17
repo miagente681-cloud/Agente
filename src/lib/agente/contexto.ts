@@ -191,6 +191,9 @@ export function armarFoto(p: { datos: Instantanea; sesion: Pick<Sesion, "kind">;
     );
   } else if (datos.rutinas.some((r) => r.active)) {
     bloques.push("No hay otra llamada programada para hoy; la próxima sale de las rutinas.");
+  } else {
+    // Las llamadas solo existen si hay rutinas: sin ellas el Agente nunca llama.
+    bloques.push("No tiene llamadas programadas. Si viene al caso, proponé armar una rutina en Configuración → Llamadas (días y hora).");
   }
 
   return bloques.join("\n\n");

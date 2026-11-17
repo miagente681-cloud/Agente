@@ -193,6 +193,8 @@ async function main() {
     await pagina.getByRole("heading", { name: /Vencidas/ }).waitFor();
     await pagina.getByText("Venció hace", { exact: false }).or(pagina.getByText(/Venció/)).first().waitFor();
     ok("lo vencido aparece arriba, marcado");
+    await pagina.getByText("Tu Agente todavía no te llama.").waitFor();
+    ok("sin rutinas, Hoy avisa que el Agente todavía no llama");
     const altaHoy = pagina.getByLabel("Nueva tarea", { exact: true });
     await altaHoy.fill("Llamar al electricista");
     await altaHoy.press("Enter");
@@ -598,6 +600,8 @@ async function main() {
     afirmar(r1.ok && r1.creadas === 1 && r2.notificadas === 1 && r2.creadas === 0, `el programador crea la llamada de la rutina y la marca a su hora (${JSON.stringify(r2)})`);
     const programada = (await estado()).sessions.find((x) => x.status === "notificada");
     await pagina.goto(BASE + "/hoy");
+    await pagina.getByText(/Tenés llamadas programadas, pero ningún dispositivo/).waitFor();
+    ok("con rutinas y sin notificaciones activadas, Hoy avisa que las llamadas no van a llegar");
     await pagina.getByRole("alert").getByText("Tu Agente te está llamando").waitFor();
     await captura("18-aviso-llamada");
     await pagina.getByRole("link", { name: "Atender" }).click();
