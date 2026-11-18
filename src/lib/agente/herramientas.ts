@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { etiquetaFecha, fechaValida } from "@/lib/datos/fechas";
+import { etiquetaFecha, fechaValida, horaCorta } from "@/lib/datos/fechas";
 import type { Proyecto, Tarea } from "@/lib/datos/tipos";
 import { buscarPorId, corto, type Instantanea, type Memoria } from "./datos";
 import type { DefHerramienta } from "./tipos";
@@ -42,7 +42,7 @@ const fallar = (mensaje: string): never => {
 
 // --- Piezas de esquema -------------------------------------------------------
 
-const id = (que: string) => z.string().min(6).max(40).describe(`Id de ${que}, tal como aparece entre corchetes`);
+const id = (que: string) => z.string().min(6).max(40).describe(`Id de ${que} (entre corchetes)`);
 const fecha = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Usá el formato AAAA-MM-DD")
@@ -50,6 +50,29 @@ const fecha = z
 /** Para quitar una fecha el modelo manda "ninguna": es más simple que un null. */
 const fechaOpcional = z.union([fecha, z.literal("ninguna")]).describe("AAAA-MM-DD, o «ninguna» para quitarla");
 const prioridad = z.number().int().min(1).max(4).describe("1 urgente, 2 alta, 3 media, 4 baja");
+/**
+ * Cuándo la persona va a hacer una tarea: un día, o un día y una hora (en su
+ * zona). Es aparte de la fecha límite. Un solo texto para que la definición
+ * entre en el cupo de Groq.
+ */
+const cuando = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$/)
+  .refine((c) => leerCuando(c) !== null, "Usá AAAA-MM-DD o AAAA-MM-DD HH:MM (24 h)")
+  .describe("AAAA-MM-DD, con HH:MM opcional");
+
+/** "2026-11-19 15:00" → { fecha, hora }; null si el día o la hora no existen. */
+export function leerCuando(c: string): { fecha: string; hora: string | null } | null {
+  const [f, h] = c.split(" ");
+  const fecha = fechaValida(...(f.split("-").map(Number) as [number, number, number]));
+  if (!fecha) return null;
+  if (!h) return { fecha, hora: null };
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(h) ? { fecha, hora: h } : null;
+}
+
+/** "el jueves 19 a las 15:00", para el resumen de un cambio. */
+const decirCuando = (fecha: string, hora: string | null, hoy: string) =>
+  `${fecha === hoy ? "hoy" : etiquetaFecha(fecha, hoy).toLowerCase()}${hora ? ` a las ${horaCorta(hora)}` : ""}`;
 const texto = (max: number) => z.string().trim().min(1).max(max);
 
 export async function registrar(
@@ -91,6 +114,7 @@ const vistaTarea = (t: Tarea) => ({
   titulo: t.title,
   estado: t.status,
   ...(t.due_date ? { vence: t.due_date, fecha_puesta_por: t.due_set_by } : {}),
+  ...(t.plan_fecha ? { hacer: t.plan_fecha + (t.plan_hora ? ` ${horaCorta(t.plan_hora)}` : "") } : {}),
   prioridad: t.priority,
   ...(t.blocked_reason ? { motivo_bloqueo: t.blocked_reason } : {}),
   ...(t.effort_minutes ? { esfuerzo_minutos: t.effort_minutes } : {}),
@@ -179,14 +203,16 @@ export const HERRAMIENTAS = {
       titulo: texto(300),
       descripcion: texto(2000).optional(),
       fecha_limite: fecha.optional(),
+      hacer: cuando.optional(),
       prioridad: prioridad.optional(),
       esfuerzo_minutos: z.number().int().min(1).max(100000).optional(),
-      tarea_padre_id: id("la tarea de la que es subtarea").optional(),
+      tarea_padre_id: id("la tarea madre").optional(),
     }),
     async ejecutar(ctx, a) {
       const p = proyectoDe(ctx, a.proyecto_id);
       const madre = a.tarea_padre_id ? tareaDe(ctx, a.tarea_padre_id) : null;
       if (madre?.parent_id) fallar("Las subtareas no pueden tener subtareas.");
+      const plan = a.hacer ? leerCuando(a.hacer) : null;
       const fila = {
         project_id: madre?.project_id ?? p.id,
         parent_id: madre?.id ?? null,
@@ -196,6 +222,8 @@ export const HERRAMIENTAS = {
         due_set_by: a.fecha_limite ? "agente" : null,
         priority: a.prioridad ?? 2,
         effort_minutes: a.esfuerzo_minutos ?? null,
+        plan_fecha: plan?.fecha ?? null,
+        plan_hora: plan?.hora ?? null,
         sort_order: Date.now() / 1000,
       };
       const t = await escribir<Tarea>(ctx.sb.from("tasks").insert(fila).select().single());
@@ -206,7 +234,8 @@ export const HERRAMIENTAS = {
         operation: "crear",
         summary:
           (madre ? `Nueva subtarea de «${madre.title}»: «${t.title}»` : `Nueva tarea en ${p.name}: «${t.title}»`) +
-          (t.due_date ? ` (para ${etiquetaFecha(t.due_date, ctx.hoy).toLowerCase()})` : ""),
+          (t.due_date ? ` (para ${etiquetaFecha(t.due_date, ctx.hoy).toLowerCase()})` : "") +
+          (plan ? `, la hacés ${decirCuando(plan.fecha, plan.hora, ctx.hoy)}` : ""),
         new_values: fila,
       });
       return { ok: true, id: corto(t.id) };
@@ -214,14 +243,14 @@ export const HERRAMIENTAS = {
   }),
 
   actualizar_tarea: definir({
-    descripcion:
-      "Cambia una tarea: estado, fecha límite, prioridad, motivo de bloqueo, título, descripción o esfuerzo. Mandá solo lo que cambia.",
+    descripcion: "Cambia una tarea. Mandá solo lo que cambia.",
     esquema: z.object({
       tarea_id: id("tarea"),
       estado: z.enum(["pendiente", "en_curso", "bloqueada", "hecha"]).optional(),
       fecha_limite: fechaOpcional.optional(),
+      hacer: z.union([cuando, z.literal("ninguna")]).optional(),
       prioridad: prioridad.optional(),
-      motivo_bloqueo: texto(300).optional().describe("Qué la traba. Solo con estado bloqueada."),
+      motivo_bloqueo: texto(300).optional().describe("Qué la traba (si está bloqueada)"),
       titulo: texto(300).optional(),
       descripcion: texto(2000).optional(),
       esfuerzo_minutos: z.number().int().min(1).max(100000).optional(),
@@ -244,6 +273,15 @@ export const HERRAMIENTAS = {
           cambios.due_date = nueva;
           cambios.due_set_by = nueva ? "agente" : null;
           partes.push(nueva ? `fecha límite → ${etiquetaFecha(nueva, ctx.hoy).toLowerCase()}` : "sin fecha límite");
+        }
+      }
+      if (a.hacer !== undefined) {
+        const plan = a.hacer === "ninguna" ? null : leerCuando(a.hacer);
+        const hora = plan?.hora ?? null;
+        if ((plan?.fecha ?? null) !== t.plan_fecha || hora !== (t.plan_hora ? horaCorta(t.plan_hora) : null)) {
+          cambios.plan_fecha = plan?.fecha ?? null;
+          cambios.plan_hora = hora;
+          partes.push(plan ? `la hacés ${decirCuando(plan.fecha, hora, ctx.hoy)}` : "sin día para hacerla");
         }
       }
       if (a.prioridad && a.prioridad !== t.priority) {

@@ -7,6 +7,7 @@ import { Boton } from "@/components/ui/boton";
 import { AreaTexto, Campo, Entrada, Selector } from "@/components/ui/campo";
 import { Dialogo } from "@/components/ui/dialogo";
 import { useDatos } from "@/lib/datos/almacen";
+import { horaCorta } from "@/lib/datos/fechas";
 import { ESTADOS_TAREA, PRIORIDADES, type EstadoTarea, type Tarea } from "@/lib/datos/tipos";
 import { Casilla } from "./fila-tarea";
 
@@ -27,7 +28,7 @@ export function DetalleTarea() {
 }
 
 function Formulario({ tarea }: { tarea: Tarea }) {
-  const { proyectos, tareas, editarTarea, archivarTarea, borrarTarea, abrirTarea } = useDatos();
+  const { hoy, proyectos, tareas, editarTarea, archivarTarea, borrarTarea, abrirTarea } = useDatos();
   const [titulo, setTitulo] = useState(tarea.title);
   const [descripcion, setDescripcion] = useState(tarea.description ?? "");
   const [motivo, setMotivo] = useState(tarea.blocked_reason ?? "");
@@ -138,6 +139,44 @@ function Formulario({ tarea }: { tarea: Tarea }) {
           />
         </Campo>
       </div>
+
+      <fieldset className="flex flex-col gap-1.5">
+        <legend className="mb-1.5 text-[13px] font-medium text-texto-2">Cuándo la hacés</legend>
+        <div className="grid grid-cols-2 gap-3">
+          <label htmlFor="tarea-plan-dia" className="sr-only">Día en que la hacés</label>
+          <Entrada
+            id="tarea-plan-dia"
+            type="date"
+            value={tarea.plan_fecha ?? ""}
+            onChange={(e) =>
+              void editarTarea(
+                tarea.id,
+                // Sin día no puede haber hora.
+                e.target.value ? { plan_fecha: e.target.value } : { plan_fecha: null, plan_hora: null },
+              )
+            }
+          />
+          <label htmlFor="tarea-plan-hora" className="sr-only">Hora en que la hacés</label>
+          <Entrada
+            id="tarea-plan-hora"
+            type="time"
+            step={300}
+            value={tarea.plan_hora ? horaCorta(tarea.plan_hora) : ""}
+            onChange={(e) =>
+              void editarTarea(
+                tarea.id,
+                // Una hora sin día se toma para hoy.
+                e.target.value ? { plan_hora: e.target.value, plan_fecha: tarea.plan_fecha ?? hoy } : { plan_hora: null },
+              )
+            }
+          />
+        </div>
+        <p className="text-[13px] text-texto-3">
+          {tarea.plan_hora
+            ? "A esa hora te aviso con una notificación."
+            : "Opcional. Es cuándo pensás hacerla, aparte de la fecha límite."}
+        </p>
+      </fieldset>
 
       {tarea.status === "bloqueada" ? (
         <Campo etiqueta="¿Qué la traba?" htmlFor="tarea-motivo">

@@ -87,16 +87,16 @@ describe("alta de tarea en una línea", () => {
 
   it("sin marcas, todo es título", () => {
     expect(parsearTarea("  Comprar pintura  ", hoy)).toEqual({
-      titulo: "Comprar pintura", due_date: null, priority: null,
+      titulo: "Comprar pintura", due_date: null, priority: null, plan_hora: null,
     });
   });
 
   it("lee fecha y prioridad al final, en cualquier orden", () => {
     expect(parsearTarea("Pintar el cuarto vie p1", hoy)).toEqual({
-      titulo: "Pintar el cuarto", due_date: "2026-11-13", priority: 1,
+      titulo: "Pintar el cuarto", due_date: "2026-11-13", priority: 1, plan_hora: null,
     });
     expect(parsearTarea("Pintar el cuarto P3 mañana", hoy)).toEqual({
-      titulo: "Pintar el cuarto", due_date: "2026-11-11", priority: 3,
+      titulo: "Pintar el cuarto", due_date: "2026-11-11", priority: 3, plan_hora: null,
     });
   });
 
@@ -120,10 +120,29 @@ describe("alta de tarea en una línea", () => {
   });
 
   it("una fecha imposible queda en el título", () => {
-    expect(parsearTarea("Algo 31/2", hoy)).toEqual({ titulo: "Algo 31/2", due_date: null, priority: null });
+    expect(parsearTarea("Algo 31/2", hoy)).toEqual({ titulo: "Algo 31/2", due_date: null, priority: null, plan_hora: null });
+  });
+
+  it("lee la hora en que la vas a hacer", () => {
+    expect(parsearTarea("Llamar al electricista mañana a las 10", hoy)).toEqual({
+      titulo: "Llamar al electricista", due_date: "2026-11-11", priority: null, plan_hora: "10:00",
+    });
+    expect(parsearTarea("Pagar la luz 18:30", hoy)).toMatchObject({ titulo: "Pagar la luz", plan_hora: "18:30" });
+    expect(parsearTarea("Gimnasio 7hs p2", hoy)).toMatchObject({ titulo: "Gimnasio", plan_hora: "07:00", priority: 2 });
+    expect(parsearTarea("Reunión con Ana de las 9:15 vie", hoy)).toMatchObject({
+      titulo: "Reunión con Ana", plan_hora: "09:15", due_date: "2026-11-13",
+    });
+    expect(parsearTarea("Dentista a la 1", hoy)).toMatchObject({ titulo: "Dentista", plan_hora: "01:00" });
+  });
+
+  it("un número solo no es hora, salvo después de «a las»", () => {
+    expect(parsearTarea("Comprar huevos 12", hoy)).toMatchObject({ titulo: "Comprar huevos 12", plan_hora: null });
+    expect(parsearTarea("Repasar la clase de las 10", hoy)).toMatchObject({ titulo: "Repasar la clase de las 10", plan_hora: null });
+    expect(parsearTarea("Algo 25:00", hoy)).toMatchObject({ titulo: "Algo 25:00", plan_hora: null });
+    expect(parsearTarea("a las 10", hoy)).toMatchObject({ titulo: "a las 10", plan_hora: null });
   });
 
   it("una sola palabra nunca se interpreta como marca", () => {
-    expect(parsearTarea("mañana", hoy)).toEqual({ titulo: "mañana", due_date: null, priority: null });
+    expect(parsearTarea("mañana", hoy)).toEqual({ titulo: "mañana", due_date: null, priority: null, plan_hora: null });
   });
 });

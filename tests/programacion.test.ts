@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
-  AJUSTES_POR_DEFECTO, ajustesDe, cuandoLegible, decidir, instanteLocal, partesEnZona, proximoHueco,
+  AJUSTES_POR_DEFECTO, ajustesDe, cuandoLegible, decidir, instanteLocal, partesEnZona, proximoHueco, tareasPorAvisar,
   type RutinaP, type SesionP, type Ventana,
 } from "@/lib/programacion/horarios";
 import { correrTick, type CargaPush, type EnviarPush } from "@/lib/programacion/tick";
@@ -326,5 +326,61 @@ describe("el programador, minuto a minuto", () => {
     // Si el programador estuvo caído más de una hora, el de ese día ya no se manda.
     servidor.sembrar("reminders", { message: "Viejo", weekdays: [4], local_time: "08:00:00" });
     expect(await tick("2026-11-12T23:30:00Z")).toMatchObject({ recordatorios: 0 });
+  });
+
+  it("avisa cada tarea a la hora en que la persona la iba a hacer, una sola vez", async () => {
+    // 15:00 en Montevideo son las 18:00 UTC.
+    const tarea = servidor.sembrar("tasks", { project_id: "p", title: "Llamar al plomero", plan_fecha: "2026-11-10", plan_hora: "15:00:00" });
+    servidor.sembrar("tasks", { project_id: "p", title: "Ya hecha", plan_fecha: "2026-11-10", plan_hora: "15:00:00", status: "hecha" });
+    servidor.sembrar("tasks", { project_id: "p", title: "Sin hora", plan_fecha: "2026-11-10" });
+
+    expect(await tick("2026-11-10T17:59:00Z")).toMatchObject({ tareas: 0 });
+    expect(await tick("2026-11-10T18:00:20Z")).toMatchObject({ tareas: 1 });
+    expect(enviados.find((e) => e.carga.etiqueta === `tarea-${tarea.id}`)?.carga).toEqual({
+      titulo: "Llamar al plomero",
+      cuerpo: "Es la hora: la planificaste para las 15:00.",
+      url: `/hoy?tarea=${tarea.id}`,
+      etiqueta: `tarea-${tarea.id}`,
+    });
+    expect(await tick("2026-11-10T18:01:00Z")).toMatchObject({ tareas: 0 }); // no repite
+
+    // Si la cambia a otra hora, se avisa de nuevo a la hora nueva.
+    Object.assign(servidor.estado().tasks.find((t) => t.id === tarea.id)!, { plan_hora: "16:30:00" });
+    expect(await tick("2026-11-10T19:00:00Z")).toMatchObject({ tareas: 0 });
+    expect(await tick("2026-11-10T19:30:00Z")).toMatchObject({ tareas: 1 });
+
+    // Con los avisos de tareas apagados, no se manda nada.
+    servidor.sembrar("tasks", { project_id: "p", title: "Otra", plan_fecha: "2026-11-10", plan_hora: "17:00:00" });
+    servidor.estado().profiles[0].agent_config = { avisar_tareas: false };
+    expect(await tick("2026-11-10T20:00:30Z")).toMatchObject({ tareas: 0 });
+  });
+});
+
+describe("tareas con hora", () => {
+  const tarea = (avisado: string | null = null) => ({ id: "t", plan_fecha: "2026-11-10", plan_hora: "15:00:00", plan_avisado_para: avisado });
+
+  it("se avisa a partir de su hora local y hasta una hora después", () => {
+    expect(tareasPorAvisar(z("2026-11-10T17:59:59Z"), MVD, [tarea()])).toEqual([]);
+    expect(tareasPorAvisar(z("2026-11-10T18:00:00Z"), MVD, [tarea()])).toEqual([
+      { tarea: tarea(), instante: "2026-11-10T18:00:00.000Z" },
+    ]);
+    expect(tareasPorAvisar(z("2026-11-10T19:00:00Z"), MVD, [tarea()])).toHaveLength(1);
+    expect(tareasPorAvisar(z("2026-11-10T19:01:00Z"), MVD, [tarea()])).toEqual([]);
+  });
+
+  it("no repite el aviso del mismo instante, aunque la base lo devuelva con otro formato", () => {
+    expect(tareasPorAvisar(z("2026-11-10T18:05:00Z"), MVD, [tarea("2026-11-10 18:00:00+00")])).toEqual([]);
+    expect(tareasPorAvisar(z("2026-11-10T18:05:00Z"), MVD, [tarea("2026-11-09T18:00:00Z")])).toHaveLength(1);
+  });
+
+  it("usa la zona de la persona, también en el cambio de hora", () => {
+    // 2026-03-08: Nueva York pasa a horario de verano (UTC-4).
+    const enNY = { id: "t", plan_fecha: "2026-03-08", plan_hora: "09:00", plan_avisado_para: null };
+    expect(tareasPorAvisar(z("2026-03-08T13:00:00Z"), "America/New_York", [enNY])).toHaveLength(1);
+    // El día anterior, las 9:00 de Nueva York eran las 14:00 UTC (UTC-5).
+    const antes = { ...enNY, plan_fecha: "2026-03-07" };
+    expect(tareasPorAvisar(z("2026-03-07T13:30:00Z"), "America/New_York", [antes])).toEqual([]);
+    expect(tareasPorAvisar(z("2026-03-07T14:00:30Z"), "America/New_York", [antes])).toHaveLength(1);
+    expect(tareasPorAvisar(z("2026-03-08T12:59:00Z"), "America/New_York", [enNY])).toEqual([]);
   });
 });

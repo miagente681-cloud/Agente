@@ -71,7 +71,7 @@ export type Instantanea = {
 
 const TAREA =
   "id,project_id,parent_id,title,description,status,priority,due_date,due_set_by,effort_minutes," +
-  "blocked_reason,sort_order,completed_at,status_changed_at,archived_at,created_at";
+  "blocked_reason,plan_fecha,plan_hora,sort_order,completed_at,status_changed_at,archived_at,created_at";
 
 function filas<T>(r: { data: unknown; error: unknown }): T[] {
   if (r.error) throw new Error("No se pudieron leer los datos");

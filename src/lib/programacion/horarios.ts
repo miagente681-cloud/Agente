@@ -261,3 +261,30 @@ export function recordatoriosPendientes<T extends RecordatorioP>(ahora: Date, zo
     })
     .map((recordatorio) => ({ recordatorio, fecha: local.fecha }));
 }
+
+// --- Tareas con hora ----------------------------------------------------------
+
+export type TareaConHoraP = {
+  id: string;
+  plan_fecha: string;
+  plan_hora: string;
+  plan_avisado_para: string | null;
+};
+
+/** Pasado este tiempo desde su hora, ya no se avisa (el programador estuvo caído). */
+export const TOLERANCIA_TAREA_MIN = 60;
+
+/**
+ * Qué tareas toca avisar ahora: su día y hora (en la zona de la persona) ya
+ * llegaron, hace menos de una hora, y todavía no se avisó para ese instante.
+ * Si la persona cambia la hora, el instante nuevo es otro y se vuelve a avisar.
+ */
+export function tareasPorAvisar<T extends TareaConHoraP>(ahora: Date, zona: string, tareas: T[]): { tarea: T; instante: string }[] {
+  return tareas.flatMap((tarea) => {
+    const instante = instanteLocal(tarea.plan_fecha, tarea.plan_hora.slice(0, 5), zona);
+    const atraso = ahora.getTime() - instante.getTime();
+    if (atraso < 0 || atraso > TOLERANCIA_TAREA_MIN * 60_000) return [];
+    if (tarea.plan_avisado_para && new Date(tarea.plan_avisado_para).getTime() === instante.getTime()) return [];
+    return [{ tarea, instante: instante.toISOString() }];
+  });
+}

@@ -62,8 +62,13 @@ export function AltaRapida({
 
   const leida = parsearTarea(texto, hoy);
   const fecha = leida.due_date ?? fechaFija ?? null;
+  // Con hora, se hace ese día (el de la fecha que escribiste, el de la vista, o hoy).
+  const planFecha = leida.plan_hora ? (fecha ?? hoy) : null;
   const pista = [
     leida.due_date ? `Vence ${etiquetaFecha(leida.due_date, hoy).toLowerCase()}` : null,
+    leida.plan_hora && planFecha
+      ? `La hacés ${planFecha === hoy ? "hoy" : etiquetaFecha(planFecha, hoy).toLowerCase()} a las ${leida.plan_hora}`
+      : null,
     leida.priority ? `Prioridad P${leida.priority}` : null,
   ].filter(Boolean);
 
@@ -74,6 +79,7 @@ export function AltaRapida({
       project_id: proyectoId,
       title: leida.titulo.slice(0, 300),
       due_date: fecha,
+      ...(leida.plan_hora ? { plan_fecha: planFecha, plan_hora: leida.plan_hora } : {}),
       ...(leida.priority ? { priority: leida.priority } : {}),
       ...(estado ? { status: estado } : {}),
     });

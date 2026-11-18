@@ -80,8 +80,10 @@ async function leerDispositivos(): Promise<{ lista: Dispositivo[]; propio: strin
   return { lista: (data as Dispositivo[] | null) ?? [], propio };
 }
 
-function Notificaciones({ estado }: { estado: EstadoApp | null }) {
+function Notificaciones({ estado, perfil, guardarConfig }: { estado: EstadoApp | null } & ReturnType<typeof usePerfil>) {
   const { avisar } = useDatos();
+  // Encendido salvo que la persona lo haya apagado.
+  const avisarTareas = perfil?.agent_config?.avisar_tareas !== false;
   const router = useRouter();
   const [push, setPush] = useState<EstadoPush | null>(null);
   const [ocupado, setOcupado] = useState(false);
@@ -216,6 +218,21 @@ function Notificaciones({ estado }: { estado: EstadoApp | null }) {
           )}
         </div>
       )}
+      <label className="mt-4 flex cursor-pointer items-start gap-2.5 border-t border-borde pt-4 text-sm">
+        <input
+          type="checkbox"
+          checked={avisarTareas}
+          disabled={!perfil}
+          onChange={(e) => void guardarConfig({ avisar_tareas: e.target.checked }).then((ok) => !ok && avisar("No se pudo guardar. Probá de nuevo."))}
+          className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-acento)]"
+        />
+        <span>
+          Avisarme a la hora de cada tarea
+          <span className="block text-[13px] text-texto-3">
+            Cuando le ponés hora a una tarea («Cuándo la hacés»), a esa hora te llega una notificación.
+          </span>
+        </span>
+      </label>
     </Tarjeta>
   );
 }
@@ -486,7 +503,7 @@ export function ConfigLlamadas() {
       </Tarjeta>
 
       <ConfigRecordatorios />
-      <Notificaciones estado={estado} />
+      <Notificaciones estado={estado} perfil={perfil} guardarConfig={guardarConfig} />
     </>
   );
 }

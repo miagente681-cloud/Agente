@@ -8,7 +8,7 @@ import { EstadoDatos, Filtro } from "@/components/filtro";
 import { AltaRapida } from "@/components/tareas/alta-rapida";
 import { ListaTareas } from "@/components/tareas/fila-tarea";
 import { EncabezadoPagina, Vacio } from "@/components/ui/varios";
-import { porPrioridad, useDatos, useTareasVisibles } from "@/lib/datos/almacen";
+import { porHoraDelDia, porPrioridad, useDatos, useTareasVisibles } from "@/lib/datos/almacen";
 import { domingoDe, fechaEnZona, fechaLarga, sumarDias } from "@/lib/datos/fechas";
 import type { Tarea } from "@/lib/datos/tipos";
 
@@ -41,9 +41,22 @@ export function VistaHoy() {
 
   const abiertas = visibles.filter((t) => t.status !== "hecha").sort(porPrioridad);
   const vencidas = abiertas.filter((t) => t.due_date && t.due_date < hoy);
-  const deHoy = abiertas.filter((t) => t.due_date === hoy);
+  const yaListadas = new Set(vencidas.map((t) => t.id));
+  // Lo de hoy: lo que vence hoy y lo que planificaste hacer hoy (o un día que
+  // ya pasó, si no lo hiciste). Lo que tiene hora va primero, por hora.
+  const deHoy = abiertas
+    .filter((t) => !yaListadas.has(t.id) && (t.due_date === hoy || (t.plan_fecha !== null && t.plan_fecha <= hoy)))
+    .sort(porHoraDelDia(hoy));
+  for (const t of deHoy) yaListadas.add(t.id);
   // Lo que ya empezaste también es "lo que toca ahora", aunque no venza hoy.
-  const enCurso = abiertas.filter((t) => t.status === "en_curso" && (!t.due_date || t.due_date > hoy));
+  const enCurso = abiertas.filter((t) => t.status === "en_curso" && !yaListadas.has(t.id));
+  const finSemana = domingoDe(hoy);
+  // En la semana, cada tarea aparece una sola vez: el día que la planificaste
+  // si cae en la semana; si no, el de su fecha límite.
+  const diaEnSemana = (t: Tarea) =>
+    t.plan_fecha && t.plan_fecha > hoy && t.plan_fecha <= finSemana ? t.plan_fecha : t.due_date;
+  const delDia = (d: string) =>
+    abiertas.filter((t) => !yaListadas.has(t.id) && diaEnSemana(t) === d).sort(porHoraDelDia(d));
   // completed_at es un instante; se compara con el día de hoy en la zona del
   // dispositivo, que para "lo que hice hoy" es lo que la persona espera.
   const zona = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -51,14 +64,13 @@ export function VistaHoy() {
     (t) => t.status === "hecha" && t.completed_at && fechaEnZona(t.completed_at, zona) === hoy,
   );
 
-  const finSemana = domingoDe(hoy);
   const dias: string[] = [];
   for (let d = sumarDias(hoy, 1); d <= finSemana; d = sumarDias(d, 1)) dias.push(d);
 
   const nada =
     rango === "hoy"
       ? !vencidas.length && !deHoy.length && !enCurso.length && !hechasHoy.length
-      : !vencidas.length && !abiertas.some((t) => t.due_date && t.due_date >= hoy && t.due_date <= finSemana);
+      : !vencidas.length && !deHoy.length && !dias.some((d) => delDia(d).length);
 
   return (
     <>
@@ -109,7 +121,7 @@ export function VistaHoy() {
               <Seccion
                 key={d}
                 titulo={fechaLarga(d)}
-                tareas={abiertas.filter((t) => t.due_date === d)}
+                tareas={delDia(d)}
               />
             ))
           )}

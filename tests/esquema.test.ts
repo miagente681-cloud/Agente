@@ -383,6 +383,28 @@ describe("auditoría de seguridad: lo que un usuario común ya no puede hacer", 
     });
   });
 
+  it("una tarea puede tener día y hora en que se hace, pero no hora sin día", async () => {
+    await como(ANA, async () => {
+      const { rows: proyectos } = await db.query<{ id: string }>("select id from public.projects limit 1");
+      const { rows } = await db.query<{ id: string; plan_fecha: string | null; plan_hora: string | null }>(
+        "insert into public.tasks (title, project_id, plan_fecha, plan_hora) values ('Llamar al plomero', $1, '2026-11-19', '15:00') returning id, plan_fecha::text, plan_hora::text",
+        [proyectos[0].id],
+      );
+      expect(rows[0]).toMatchObject({ plan_fecha: "2026-11-19", plan_hora: "15:00:00" });
+      await expect(
+        db.query("update public.tasks set plan_fecha = null where id = $1", [rows[0].id]),
+      ).rejects.toThrow(/tasks_plan_hora_con_fecha/);
+      // Solo el día, sin hora, está bien.
+      await db.query("update public.tasks set plan_hora = null where id = $1", [rows[0].id]);
+      // Marcar el aviso no toca nada más de la tarea.
+      const { rows: marcada } = await db.query<{ status: string }>(
+        "update public.tasks set plan_avisado_para = now() where id = $1 returning status",
+        [rows[0].id],
+      );
+      expect(marcada[0].status).toBe("pendiente");
+    });
+  });
+
   it("tiene un máximo de suscripciones, rutinas y ventanas por usuario", async () => {
     await como(BETO, async () => {
       for (let i = 0; i < 10; i++) {

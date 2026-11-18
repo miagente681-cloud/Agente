@@ -22,7 +22,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { useState } from "react";
 import { EstadoDatos, Filtro } from "@/components/filtro";
 import { AltaRapida } from "@/components/tareas/alta-rapida";
-import { CuentaSubtareas, FechaLimite, MarcaPrioridad } from "@/components/tareas/fila-tarea";
+import { CuentaSubtareas, FechaLimite, MarcaPlan, MarcaPrioridad } from "@/components/tareas/fila-tarea";
 import { EncabezadoPagina } from "@/components/ui/varios";
 import { useDatos, useTareasVisibles } from "@/lib/datos/almacen";
 import { sumarDias } from "@/lib/datos/fechas";
@@ -59,6 +59,7 @@ function Tarjeta({ tarea, flotando = false }: { tarea: Tarea; flotando?: boolean
         </span>
         <CuentaSubtareas id={tarea.id} />
         <MarcaPrioridad prioridad={tarea.priority} />
+        <MarcaPlan tarea={tarea} hoy={hoy} />
         <FechaLimite tarea={tarea} hoy={hoy} />
       </span>
     </div>

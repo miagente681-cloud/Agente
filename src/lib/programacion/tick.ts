@@ -1,6 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { destinoPushValido } from "@/lib/push/destinos";
-import { ajustesDe, cuandoLegible, decidir, recordatoriosPendientes, type RecordatorioP, type RutinaP, type SesionP, type Ventana } from "./horarios";
+import {
+  ajustesDe, cuandoLegible, decidir, recordatoriosPendientes, tareasPorAvisar,
+  type RecordatorioP, type RutinaP, type SesionP, type TareaConHoraP, type Ventana,
+} from "./horarios";
 
 /**
  * Lo que hace el programador cada minuto, para todos los usuarios: aplica en
@@ -46,6 +49,8 @@ export type ResumenTick = {
   avisos: number;
   /** Recordatorios enviados (los que cada persona programó en Configuración). */
   recordatorios: number;
+  /** Tareas avisadas porque llegó la hora en que la persona las iba a hacer. */
+  tareas: number;
   /** Avisos que no se mandaron porque se acabó el tiempo de esta corrida. */
   postergados: number;
 };
@@ -72,7 +77,7 @@ export async function correrTick(p: {
   reloj?: () => number;
 }): Promise<ResumenTick> {
   const { admin, ahora } = p;
-  const resumen: ResumenTick = { creadas: 0, notificadas: 0, reprogramadas: 0, perdidas: 0, cerradas: 0, avisos: 0, recordatorios: 0, postergados: 0 };
+  const resumen: ResumenTick = { creadas: 0, notificadas: 0, reprogramadas: 0, perdidas: 0, cerradas: 0, avisos: 0, recordatorios: 0, tareas: 0, postergados: 0 };
   const reloj = p.reloj ?? Date.now;
   const limiteEnvios = reloj() + (p.tiempoEnviosMs ?? TIEMPO_ENVIOS_POR_CORRIDA_MS);
   const ahoraISO = ahora.toISOString();
@@ -140,6 +145,47 @@ export async function correrTick(p: {
           { titulo: "MiAgente", cuerpo: recordatorio.message, url: "/chat", etiqueta: `recordatorio-${recordatorio.id}` },
         ]);
         if (enviados) resumen.recordatorios++;
+      }
+    }
+  }
+
+  // Tareas con día y hora: «es la hora». Se buscan las de ayer a mañana (en
+  // UTC) y cada una se mira en la zona de su dueño.
+  const { data: conHora } = await admin
+    .from("tasks")
+    .select("id,user_id,title,plan_fecha,plan_hora,plan_avisado_para")
+    .not("plan_hora", "is", null)
+    .is("archived_at", null)
+    .neq("status", "hecha")
+    .gte("plan_fecha", new Date(ahora.getTime() - 36 * 3_600_000).toISOString().slice(0, 10))
+    .lte("plan_fecha", new Date(ahora.getTime() + 36 * 3_600_000).toISOString().slice(0, 10))
+    .limit(2000);
+  const tareasConHora = (conHora ?? []) as (TareaConHoraP & { user_id: string; title: string })[];
+  if (tareasConHora.length) {
+    const duenos = [...new Set(tareasConHora.map((t) => t.user_id))];
+    const { data: perfilesTareas } = await admin.from("profiles").select("user_id,timezone,agent_config").in("user_id", duenos);
+    for (const perfil of (perfilesTareas ?? []) as { user_id: string; timezone: string; agent_config: Record<string, unknown> | null }[]) {
+      // Se puede apagar en Configuración → Notificaciones.
+      if (perfil.agent_config?.avisar_tareas === false) continue;
+      const tocan = tareasPorAvisar(ahora, perfil.timezone, tareasConHora.filter((t) => t.user_id === perfil.user_id));
+      for (const { tarea, instante } of tocan) {
+        // Se marca antes de enviar y solo si nadie lo marcó: dos corridas no avisan dos veces.
+        const { data: marcada } = await admin
+          .from("tasks")
+          .update({ plan_avisado_para: instante })
+          .eq("id", tarea.id)
+          .or(`plan_avisado_para.is.null,plan_avisado_para.neq.${instante}`)
+          .select("id");
+        if (!marcada?.length) continue;
+        const enviados = await avisar(perfil.user_id, [
+          {
+            titulo: tarea.title.slice(0, 120),
+            cuerpo: `Es la hora: la planificaste para las ${tarea.plan_hora.slice(0, 5)}.`,
+            url: `/hoy?tarea=${tarea.id}`,
+            etiqueta: `tarea-${tarea.id}`,
+          },
+        ]);
+        if (enviados) resumen.tareas++;
       }
     }
   }

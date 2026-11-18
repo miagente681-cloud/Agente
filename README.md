@@ -12,10 +12,11 @@ Un gestor de proyectos para la vida personal, con un Agente de IA que conoce tus
 ## Cómo se usa
 
 1. **Entrá** con tu correo y contraseña. La primera vez, con el código que llega por correo; después ponete una contraseña en Configuración.
-2. **Cargá tus proyectos y tareas.** Escribí la tarea y Enter. Si terminás con `hoy`, `mañana`, un día (`vie`), una fecha (`14/11`) o una prioridad (`p1` a `p4`), se leen solas: `Pintar el cuarto vie p1`.
-3. **Mirá tu día** en Hoy, mové tarjetas en el Tablero o cambiá fechas arrastrando en el Calendario.
-4. **Hablá con el Agente** desde su pantalla: escribile o tocá «Hablar». Para terminar, decile que termine la sesión.
-5. **Configurá los avisos** en Configuración: rutinas de llamada, recordatorios y notificaciones del dispositivo.
+2. **Cargá tus proyectos y tareas.** Escribí la tarea y Enter. Si terminás con `hoy`, `mañana`, un día (`vie`), una fecha (`14/11`), una hora (`a las 15`, `18:30`) o una prioridad (`p1` a `p4`), se leen solas: `Pintar el cuarto vie a las 15 p1`.
+3. **Elegí cuándo hacer cada tarea.** En el detalle de la tarea, «Cuándo la hacés» guarda el día y la hora, aparte de la fecha límite. A esa hora te llega una notificación.
+4. **Mirá tu día** en Hoy (lo que tiene hora, ordenado por hora), mové tarjetas en el Tablero o cambiá fechas arrastrando en el Calendario.
+5. **Hablá con el Agente** desde su pantalla: escribile o tocá «Hablar». Para terminar, decile que termine la sesión.
+6. **Configurá los avisos** en Configuración: rutinas de llamada, recordatorios y notificaciones del dispositivo.
 
 En el celular se instala como app desde el navegador («Agregar a pantalla de inicio»). En iPhone las notificaciones solo funcionan con la app instalada.
 

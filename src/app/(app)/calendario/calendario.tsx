@@ -18,8 +18,8 @@ import { AltaRapida } from "@/components/tareas/alta-rapida";
 import { ListaTareas } from "@/components/tareas/fila-tarea";
 import { Boton } from "@/components/ui/boton";
 import { EncabezadoPagina } from "@/components/ui/varios";
-import { porPrioridad, useDatos, useTareasVisibles } from "@/lib/datos/almacen";
-import { fechaEnZona, fechaLarga, grillaMes, MESES } from "@/lib/datos/fechas";
+import { porHoraDelDia, porPrioridad, useDatos, useTareasVisibles } from "@/lib/datos/almacen";
+import { fechaEnZona, fechaLarga, grillaMes, horaCorta, MESES } from "@/lib/datos/fechas";
 import type { Proyecto, Tarea } from "@/lib/datos/tipos";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
@@ -54,6 +54,7 @@ function Ficha({ tarea, hoy }: { tarea: Tarea; hoy: string }) {
             : "bg-elevado text-texto-2"
       }`}
     >
+      {tarea.plan_hora && !hecha ? <span className="font-mono opacity-80">{horaCorta(tarea.plan_hora)} </span> : null}
       {tarea.title}
     </span>
   );
@@ -114,7 +115,7 @@ function Dia({
               <span
                 key={t.id}
                 className={`h-1 w-1 rounded-full ${
-                  t.status === "hecha" ? "bg-borde-fuerte" : t.due_date! < hoy ? "bg-peligro" : "bg-acento"
+                  t.status === "hecha" ? "bg-borde-fuerte" : t.due_date && t.due_date < hoy ? "bg-peligro" : "bg-acento"
                 }`}
               />
             ))}
@@ -158,6 +159,9 @@ function Dia({
   );
 }
 
+/** El día en que se muestra una tarea en el calendario. */
+const diaEnCalendario = (t: Tarea) => t.plan_fecha ?? t.due_date;
+
 export function Calendario() {
   const { estado, hoy, zona, editarTarea, proyectos, filtro } = useDatos();
   const [llamadas, setLlamadas] = useState<LlamadaCal[]>([]);
@@ -174,13 +178,19 @@ export function Calendario() {
   const celdas = grillaMes(anio, mes);
   const prefijo = `${anio}-${String(mes).padStart(2, "0")}`;
 
+  // Cada tarea va el día que la hacés; si no lo elegiste, el de su fecha límite.
   const porDia = new Map<string, Tarea[]>();
   for (const t of visibles) {
-    if (!t.due_date) continue;
-    porDia.set(t.due_date, [...(porDia.get(t.due_date) ?? []), t]);
+    const d = diaEnCalendario(t);
+    if (!d) continue;
+    porDia.set(d, [...(porDia.get(d) ?? []), t]);
   }
-  for (const lista of porDia.values()) {
-    lista.sort((a, b) => Number(a.status === "hecha") - Number(b.status === "hecha") || porPrioridad(a, b));
+  for (const [d, lista] of porDia) {
+    const porHora = porHoraDelDia(d);
+    // Lo hecho al final; lo que tiene hora, por hora; el resto, por prioridad.
+    lista.sort(
+      (a, b) => Number(a.status === "hecha") - Number(b.status === "hecha") || porHora(a, b) || porPrioridad(a, b),
+    );
   }
 
   // Fechas límite de los proyectos activos (respetando el filtro de proyecto).
@@ -226,7 +236,9 @@ export function Calendario() {
     setArrastrada(null);
     if (!over) return;
     const tarea = visibles.find((t) => t.id === active.id);
-    if (tarea && tarea.due_date !== over.id) void editarTarea(tarea.id, { due_date: String(over.id) });
+    if (!tarea || diaEnCalendario(tarea) === over.id) return;
+    // Se mueve la fecha por la que está ubicada: el día en que la hacés (con su hora) o la fecha límite.
+    void editarTarea(tarea.id, tarea.plan_fecha ? { plan_fecha: String(over.id) } : { due_date: String(over.id) });
   }
 
   const delDia = porDia.get(dia) ?? [];
@@ -234,7 +246,10 @@ export function Calendario() {
 
   return (
     <>
-      <EncabezadoPagina titulo="Calendario" descripcion="Las tareas, en el día de su fecha límite." />
+      <EncabezadoPagina
+        titulo="Calendario"
+        descripcion="Cada tarea, el día en que la hacés; si no lo elegiste, el de su fecha límite."
+      />
       {estado !== "listo" ? (
         <EstadoDatos />
       ) : (

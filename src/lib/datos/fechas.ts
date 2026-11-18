@@ -97,3 +97,18 @@ export function grillaMes(anio: number, mes: number): string[] {
   const inicio = lunesDe(aISO(new Date(Date.UTC(anio, mes - 1, 1))));
   return Array.from({ length: 42 }, (_, i) => sumarDias(inicio, i));
 }
+
+/** "15:00:00" o "15:00" → "15:00". */
+export function horaCorta(hora: string): string {
+  return hora.slice(0, 5);
+}
+
+/**
+ * Cuándo la persona va a hacer una tarea: "15:00" si es hoy, "Mañana 9:30",
+ * "mié 19 15:00", o solo el día si no tiene hora.
+ */
+export function etiquetaPlan(fecha: string, hora: string | null, hoy: string): string {
+  const dia = etiquetaFecha(fecha, hoy);
+  if (!hora) return dia;
+  return fecha === hoy ? horaCorta(hora) : `${dia} ${horaCorta(hora)}`;
+}

@@ -37,6 +37,10 @@ export type Tarea = {
   due_set_by: "usuario" | "agente" | null;
   effort_minutes: number | null;
   blocked_reason: string | null;
+  /** Día en que la persona piensa hacerla (no es la fecha límite). */
+  plan_fecha: string | null;
+  /** Hora de ese día, "HH:MM:SS", en la zona del perfil. */
+  plan_hora: string | null;
   sort_order: number;
   completed_at: string | null;
   status_changed_at: string;

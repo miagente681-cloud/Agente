@@ -27,18 +27,18 @@ const COLUMNAS_PROYECTO =
   "id,area_id,name,goal,description,status,priority,due_date,sort_order,created_at";
 export const COLUMNAS_TAREA =
   "id,project_id,parent_id,title,description,status,priority,due_date,due_set_by," +
-  "effort_minutes,blocked_reason,sort_order,completed_at,status_changed_at,archived_at,created_at";
+  "effort_minutes,blocked_reason,plan_fecha,plan_hora,sort_order,completed_at,status_changed_at,archived_at,created_at";
 
 export type Filtro = { areaId: string | null; proyectoId: string | null };
 type Aviso = { id: number; texto: string; accion?: { nombre: string; hacer: () => void } };
 
 export type NuevaTarea = Pick<Tarea, "project_id" | "title"> &
-  Partial<Pick<Tarea, "parent_id" | "status" | "priority" | "due_date" | "sort_order">>;
+  Partial<Pick<Tarea, "parent_id" | "status" | "priority" | "due_date" | "plan_fecha" | "plan_hora" | "sort_order">>;
 export type CambiosTarea = Partial<
   Pick<
     Tarea,
     | "project_id" | "title" | "description" | "status" | "priority" | "due_date"
-    | "effort_minutes" | "blocked_reason" | "sort_order"
+    | "effort_minutes" | "blocked_reason" | "plan_fecha" | "plan_hora" | "sort_order"
   >
 >;
 export type NuevoProyecto = Pick<Proyecto, "name"> &
@@ -286,6 +286,8 @@ export function ProveedorDatos({ children }: { children: ReactNode }) {
         due_date: null,
         effort_minutes: null,
         blocked_reason: null,
+        plan_fecha: null,
+        plan_hora: null,
         // Las nuevas van al final: el tiempo siempre crece.
         sort_order: Date.now() / 1000,
         archived_at: null,
@@ -440,6 +442,21 @@ export function useTareasVisibles(): Tarea[] {
 }
 
 /** Orden por defecto de las listas: prioridad, fecha límite, orden manual. */
+/**
+ * Orden de las tareas de un día: primero las que planificaste para un día
+ * anterior y no hiciste, después las que tienen hora ese día (por hora) y al
+ * final el resto. Es estable: dentro de cada grupo se respeta el orden previo
+ * (por ejemplo, por prioridad).
+ */
+export function porHoraDelDia(dia: string) {
+  const grupo = (t: Tarea) => (t.plan_fecha && t.plan_fecha < dia ? 0 : t.plan_fecha === dia && t.plan_hora ? 1 : 2);
+  return (a: Tarea, b: Tarea): number => {
+    const g = grupo(a) - grupo(b);
+    if (g || grupo(a) !== 1) return g;
+    return (a.plan_hora as string).localeCompare(b.plan_hora as string);
+  };
+}
+
 export function porPrioridad(a: Tarea, b: Tarea): number {
   return (
     a.priority - b.priority ||

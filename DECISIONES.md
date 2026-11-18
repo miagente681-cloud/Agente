@@ -247,6 +247,24 @@ Lo que había el 17/11: las 7 fases hechas, el programador corriendo cada minuto
 | Tocar la notificación con la app abierta | El service worker trae la app al frente y cambia de página con `WindowClient.navigate()`. No pude confirmar que Safari en iPhone lo tenga; si no está o falla, le manda un mensaje a la app y la app navega sola a la llamada (`registrar-sw.tsx`). Con la app cerrada, la abre directo en la llamada. |
 | El Agente sin rutinas | Si la persona no tiene ninguna rutina, el contexto le dice al Agente que puede proponer armar una en Configuración. No se le dio una herramienta para crearlas: las definiciones de herramientas están en 6.997 de los 7.000 caracteres que permite el cupo de Groq. |
 
+## Día y hora para hacer cada tarea (pedido el 18/11/2026)
+
+La persona pidió poder elegir, por cada tarea, la hora en que la va a hacer. Hasta ahora cada tarea tenía solo la fecha límite, sin hora.
+
+| Tema | Decisión |
+|---|---|
+| Dato nuevo | Migración 0008: `tasks.plan_fecha` (día) y `tasks.plan_hora` (hora, opcional), de reloj de pared en la zona del perfil, como las rutinas. No puede haber hora sin día (restricción `tasks_plan_hora_con_fecha`). |
+| Aparte de la fecha límite | «Para cuándo tiene que estar» y «cuándo la hago» son cosas distintas: una tarea puede vencer el viernes y estar planificada para el miércoles a las 15:00. Por eso no se le agregó hora a `due_date`. |
+| Detalle de la tarea | Sección «Cuándo la hacés» con día y hora. Una hora sin día se toma para hoy; borrar el día borra también la hora. |
+| Alta en una línea | Lee la hora al final: `15:30`, `15hs`, `9h`, `a las 15`, `a la 1`, `de las 9:15`. Un número solo («Comprar huevos 12») no es hora, salvo después de «a las». Con hora, el día es el de la fecha escrita, el de la vista (Hoy) o hoy. Si también se escribió una fecha («mañana a las 10»), esa fecha queda además como fecha límite, como antes. |
+| Hoy | La sección «Hoy» suma lo planificado para hoy (y lo planificado para días anteriores que no se hizo, marcado en amarillo para replanificarlo). Orden: primero eso atrasado, después lo que tiene hora (por hora), después el resto por prioridad. En «Esta semana», cada tarea aparece una sola vez: el día planificado si cae en la semana; si no, el de su fecha límite. |
+| Calendario | Cada tarea va el día que la hacés; si no lo elegiste, el de su fecha límite. Arrastrarla mueve esa misma fecha (con su hora). Las que tienen hora la muestran antes del título. |
+| Tablero y listas | Marca con un reloj: «15:00» si es hoy, «Mañana 9:30» o «mié 19 15:00». No se muestra en las tareas hechas. |
+| Aviso | A la hora planificada, el programador manda una notificación con el título de la tarea («Es la hora: la planificaste para las 15:00»). Al tocarla se abre esa tarea (`/hoy?tarea=<id>`). Una vez por instante (`plan_avisado_para`): si se cambia la hora, se vuelve a avisar a la nueva. No se avisa lo hecho ni lo archivado, ni con más de una hora de atraso. |
+| Apagar el aviso | Configuración → Notificaciones → «Avisarme a la hora de cada tarea» (`agent_config.avisar_tareas`, encendido por defecto). Es una preferencia: no protege nada. |
+| Agente | `crear_tarea` y `actualizar_tarea` aceptan `hacer` («AAAA-MM-DD» o «AAAA-MM-DD HH:MM»; «ninguna» para quitarlo). El resumen del estado le muestra «la hace mié 19 15:00» y «la iba a hacer» si el día ya pasó. Una regla nueva le dice que para reservar un momento use `hacer` y no la fecha límite. Para que las definiciones sigan bajo 7.000 caracteres (cupo de Groq) se acortaron textos: el de los ids, la descripción de `actualizar_tarea` y la del motivo de bloqueo. |
+| Configuración compartida | La tarjeta de Notificaciones recibe el perfil de la de Llamadas en lugar de cargarlo aparte: dos copias del perfil se pisaban los ajustes al guardar. |
+
 ## Despliegue
 
 - **Proyecto de Vercel `miagente`** (equipo MiAgente), enlazado a `miagente681-cloud/Agente`. El repo estaba vacío: el código de la fase 1 se trajo desde `Emontone21/MiAg` con su historial.

@@ -10,7 +10,7 @@ Este documento es el mapa del proyecto. Está pensado para que alguien (una pers
 | `README.md` | Presentación breve: para qué sirve y cómo se usa |
 | `.env.example` | Lista completa de variables, sin valores |
 
-Última actualización: 17/11/2026.
+Última actualización: 18/11/2026.
 
 ---
 
@@ -85,7 +85,7 @@ Las migraciones de `supabase/migrations/` son la fuente de verdad. Todas las tab
 | Tabla | Qué guarda | Quién escribe |
 |---|---|---|
 | `profiles` | Nombre, zona horaria, `agent_config` (preferencias en JSON), si hizo la entrevista | La persona (y el servidor para marcas) |
-| `areas`, `projects`, `tasks` | El panel. `tasks.parent_id` = subtarea (un nivel) | La persona y el Agente |
+| `areas`, `projects`, `tasks` | El panel. `tasks.parent_id` = subtarea (un nivel). `tasks.plan_fecha` y `plan_hora`: cuándo la persona la va a hacer (aparte de la fecha límite `due_date`); `plan_avisado_para`: para qué instante ya se avisó | La persona y el Agente; el programador marca `plan_avisado_para` |
 | `project_log` | Bitácora de cada proyecto | La persona y el Agente |
 | `memories` | Lo que el Agente sabe de la persona | El Agente y la persona |
 | `sessions` | Cada conversación: `kind` (chat, onboarding, llamada_programada), `channel` (voz, texto), estado, resumen, compromisos | Ver nota abajo |
@@ -158,7 +158,8 @@ Claude es el único proveedor pago. Las reglas están en `claude/` y en `segurid
 - **Qué hace:** `programacion/tick.ts` → `correrTick()`, con la clave de servicio:
   1. Cierra llamadas abandonadas.
   2. Manda los recordatorios que tocan (una vez por día cada uno).
-  3. Para cada persona, aplica lo que decide `horarios.ts` → `decidir()`: crear la llamada del día, notificarla, reprogramarla si no atendió o darla por perdida.
+  3. Avisa las tareas cuya hora planificada llegó («es la hora»), una vez por instante, salvo que la persona lo haya apagado (`agent_config.avisar_tareas = false`). La decisión es pura: `horarios.ts` → `tareasPorAvisar()`.
+  4. Para cada persona, aplica lo que decide `horarios.ts` → `decidir()`: crear la llamada del día, notificarla, reprogramarla si no atendió o darla por perdida.
 - **La lógica de horarios es pura** (`horarios.ts`): recibe la hora y los datos, devuelve acciones. Todo en la zona horaria del perfil. Se prueba sin reloj ni base.
 - **Push:** `push/servidor.ts` envía con 5 s de máximo por envío; cada corrida tiene 20 s en total para envíos. Solo se envía a hosts de servicios de push reales (`push/destinos.ts`, y la misma lista está en una restricción de la base: si se cambia una, cambiar la otra).
 - **Las llamadas solo se avisan por push** (no hay teléfono, correo ni Telegram; ver `DECISIONES.md`). Cada envío queda anotado en el dispositivo con `tick.ts` → `anotarEnvio()`: entregado, o el código y motivo del fallo. Configuración → Notificaciones lo muestra, y Hoy avisa si las llamadas no van a llegar (`components/estado-llamadas.tsx`).
@@ -236,6 +237,7 @@ Antes de subir un cambio tienen que pasar las cuatro cosas. Los servicios de men
 | Agregar una tabla o columna | Migración nueva (`000N_nombre.sql`) con RLS; aplicarla en Supabase; sumarla en `tests/esquema.test.ts`, `supabase-falso.cjs`, la exportación (`configuracion/datos.tsx`) y el borrado (`api/cuenta/borrar`) |
 | Cambiar cuándo se llama o se reprograma | `lib/programacion/horarios.ts` (y sus pruebas en `tests/programacion.test.ts`) |
 | Cambiar qué dice una notificación | `lib/programacion/tick.ts` (los objetos `CargaPush`) |
+| Cambiar cómo se lee una tarea escrita en una línea (fecha, hora, prioridad) | `lib/datos/parsear-tarea.ts` (y sus pruebas en `tests/datos.test.ts`) |
 | Agregar un endpoint | `app/api/.../route.ts`: validar con `usuarioActual()`, y si gasta, `frenarSiHaceFalta()` con una clave nueva en `seguridad/frecuencia.ts` |
 | Sumar una integración con clave | Variable en `.env.example` y `CREDENCIALES.md`, entrada en `lib/integraciones.ts`, y que la función degrade si falta |
 | Cambiar la voz | `lib/voz/` (`azure.ts` o `navegador.ts`); la lista de voces está en `tipos.ts` |
@@ -244,7 +246,7 @@ Antes de subir un cambio tienen que pasar las cuatro cosas. Los servicios de men
 
 - **Desplegar:** un `git push` a `claude/pensive-galileo-w7i9nk` despliega producción en Vercel. No hay entorno de pruebas separado: todo push va a la app en uso. La rama `main` existe pero está atrasada.
 - **Variables:** una variable nueva o cambiada en Vercel recién se aplica al volver a desplegar.
-- **Migraciones:** se aplican a mano en Supabase (SQL Editor o la API de administración), en orden. Hasta hoy están aplicadas de la 0001 a la 0007.
+- **Migraciones:** se aplican a mano en Supabase (SQL Editor o la API de administración), en orden. Hasta hoy están aplicadas de la 0001 a la 0008.
 - **Registros:** Vercel (plan Hobby) guarda solo la última hora. El servidor escribe líneas `[agente]` cuando un proveedor falla, `[claude]` por cada pedido (tokens y costo, sin datos de la persona) y `[push]` cuando un aviso no se pudo entregar.
 - **Costo:** todo es gratuito salvo Claude. No activar facturación en ningún otro proveedor.
 

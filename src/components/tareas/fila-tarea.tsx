@@ -1,8 +1,8 @@
 "use client";
 
-import { Check, ListTree, OctagonAlert, Sparkles } from "lucide-react";
+import { Check, Clock, ListTree, OctagonAlert, Sparkles } from "lucide-react";
 import { useDatos } from "@/lib/datos/almacen";
-import { etiquetaFecha } from "@/lib/datos/fechas";
+import { etiquetaFecha, etiquetaPlan } from "@/lib/datos/fechas";
 import type { Tarea } from "@/lib/datos/tipos";
 
 /** Casilla redonda para marcar una tarea como hecha. Área táctil de 40px. */
@@ -68,6 +68,27 @@ export function FechaLimite({ tarea, hoy }: { tarea: Tarea; hoy: string }) {
   );
 }
 
+/** Cuándo pensás hacer la tarea: "15:00", "Mañana 9:30", "mié 19". */
+export function MarcaPlan({ tarea, hoy }: { tarea: Tarea; hoy: string }) {
+  if (!tarea.plan_fecha || tarea.status === "hecha") return null;
+  // Planificada para un día que ya pasó y sin hacer: se marca para replanificarla.
+  const atrasada = tarea.plan_fecha < hoy;
+  const esHoy = tarea.plan_fecha === hoy;
+  const texto = etiquetaPlan(tarea.plan_fecha, tarea.plan_hora, hoy);
+  return (
+    <span
+      className={`inline-flex items-center gap-1 whitespace-nowrap text-xs ${
+        atrasada ? "text-aviso" : esHoy ? "font-medium text-acento" : "text-texto-2"
+      }`}
+      title={atrasada ? "La tenías planificada para un día que ya pasó" : "Cuándo la hacés"}
+    >
+      <Clock size={11} aria-hidden />
+      <span className="sr-only">La hacés: </span>
+      {texto}
+    </span>
+  );
+}
+
 /** Cuenta de subtareas "2/5", o nada si no tiene. */
 export function useSubtareas(id: string) {
   const { tareas } = useDatos();
@@ -129,6 +150,7 @@ export function FilaTarea({
         {tarea.status === "en_curso" ? <span className="text-xs text-info">En curso</span> : null}
         <CuentaSubtareas id={tarea.id} />
         <MarcaPrioridad prioridad={tarea.priority} />
+        <MarcaPlan tarea={tarea} hoy={hoy} />
         <FechaLimite tarea={tarea} hoy={hoy} />
       </div>
     </li>

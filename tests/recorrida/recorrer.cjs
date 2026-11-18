@@ -163,6 +163,9 @@ async function main() {
     await pagina.getByRole("dialog").getByLabel("Estado", { exact: true }).selectOption("bloqueada");
     await pagina.getByLabel("¿Qué la traba?").fill("Falta definir el color con Ana");
     await pagina.getByLabel("¿Qué la traba?").blur();
+    // Cuándo la hacés: una hora sin día se toma para hoy.
+    await pagina.getByLabel("Hora en que la hacés").fill("15:00");
+    await pagina.getByText("A esa hora te aviso con una notificación.").waitFor();
     await captura("01-detalle-tarea");
     await pagina.getByRole("button", { name: "Cerrar" }).click();
     e = await estado();
@@ -171,6 +174,8 @@ async function main() {
     afirmar(e.tasks.find((t) => t.title === "Medir las paredes").completed_at, "subtarea marcada como hecha");
     afirmar(t1.status === "bloqueada" && t1.blocked_reason === "Falta definir el color con Ana" && t1.description === "Blancos de 30x60, mate.",
       "estado, motivo de bloqueo y notas guardados");
+    afirmar(t1.plan_hora === "15:00" && t1.plan_fecha === fechaMvd(0) && t1.due_date === fechaMvd(1),
+      "la hora en que la hacés se guarda aparte de la fecha límite (sin día, hoy)");
 
     await pagina.getByLabel("Nueva entrada de bitácora").fill("Decidimos no mover la bañera.");
     await pagina.getByLabel("Tipo de entrada").selectOption("decision");
@@ -201,6 +206,20 @@ async function main() {
     await pagina.getByRole("button", { name: "Llamar al electricista" }).waitFor();
     afirmar((await estado()).tasks.find((t) => t.title === "Llamar al electricista").due_date === fechaMvd(0),
       "una tarea cargada en Hoy queda con fecha de hoy");
+    await altaHoy.fill("Pagar la luz a las 18:30");
+    await pagina.getByText("La hacés hoy a las 18:30").waitFor();
+    await altaHoy.press("Enter");
+    await pagina.getByRole("button", { name: "Pagar la luz" }).waitFor();
+    const luz = (await estado()).tasks.find((t) => t.title === "Pagar la luz");
+    afirmar(luz?.plan_hora === "18:30" && luz.plan_fecha === fechaMvd(0), "el alta en una línea lee la hora («a las 18:30»)");
+    // En Hoy, lo que tiene hora va primero y por hora: azulejos (15:00) antes que la luz (18:30).
+    const seccionHoy = pagina.locator("section").filter({ has: pagina.getByRole("heading", { name: /^Hoy/ }) });
+    const titulosHoy = await seccionHoy.getByRole("button").allInnerTexts();
+    const iAzulejos = titulosHoy.findIndex((x) => x.includes("Elegir azulejos"));
+    const iLuz = titulosHoy.findIndex((x) => x.includes("Pagar la luz"));
+    afirmar(iAzulejos >= 0 && iLuz > iAzulejos, `Hoy ordena por hora lo planificado (${JSON.stringify(titulosHoy)})`);
+    await seccionHoy.getByText("La hacés: 15:00").waitFor();
+    ok("la tarea muestra la hora en que la hacés");
     await pagina.getByRole("checkbox", { name: /Marcar «Retirar materiales» como hecha/ }).click();
     await pagina.getByRole("heading", { name: /Hechas hoy/ }).waitFor();
     afirmar((await estado()).tasks.find((t) => t.title === "Retirar materiales").status === "hecha", "marcar como hecha desde la lista");
@@ -265,28 +284,41 @@ async function main() {
     const manana = fechaMvd(1);
     const pasado = fechaMvd(3);
     if (manana.slice(0, 7) === pasado.slice(0, 7) && manana.slice(0, 7) === fechaMvd(0).slice(0, 7)) {
-      const ficha = pagina.locator("span[role=presentation]", { hasText: "Elegir azulejos" });
-      const celdas = pagina.locator("div.grid.grid-cols-7 > div");
-      const todas = await celdas.count();
-      // La celda de destino se busca por su etiqueta accesible (día del mes).
-      let destinoCelda = null;
-      for (let i = 0; i < todas; i++) {
-        const etiqueta = await celdas.nth(i).getByRole("button").first().getAttribute("aria-label");
-        if (etiqueta && new RegExp(` ${Number(pasado.slice(8))} de `).test(etiqueta) && (await celdas.nth(i).locator("span").first().getAttribute("class")).includes("text-texto-2")) {
-          destinoCelda = celdas.nth(i);
-          break;
+      // Arrastra la ficha de «Elegir azulejos» hasta el día `pasado` (la ficha está en el día por el que se ubica).
+      const arrastrarAzulejos = async () => {
+        const ficha = pagina.locator("span[role=presentation]", { hasText: "Elegir azulejos" });
+        const celdas = pagina.locator("div.grid.grid-cols-7 > div");
+        const todas = await celdas.count();
+        // La celda de destino se busca por su etiqueta accesible (día del mes).
+        let destinoCelda = null;
+        for (let i = 0; i < todas; i++) {
+          const etiqueta = await celdas.nth(i).getByRole("button").first().getAttribute("aria-label");
+          if (etiqueta && new RegExp(` ${Number(pasado.slice(8))} de `).test(etiqueta) && (await celdas.nth(i).locator("span").first().getAttribute("class")).includes("text-texto-2")) {
+            destinoCelda = celdas.nth(i);
+            break;
+          }
         }
-      }
-      const f = await ficha.boundingBox();
-      const c = await destinoCelda.boundingBox();
-      await pagina.mouse.move(f.x + f.width / 2, f.y + f.height / 2);
-      await pagina.mouse.down();
-      await pagina.mouse.move(f.x + f.width / 2 + 10, f.y + f.height / 2 + 10, { steps: 4 });
-      await pagina.mouse.move(c.x + c.width / 2, c.y + c.height - 12, { steps: 12 });
-      await pagina.mouse.up();
-      await pagina.waitForTimeout(400);
-      afirmar((await estado()).tasks.find((t) => t.title === "Elegir azulejos").due_date === pasado,
-        "arrastrar una tarea a otro día cambia la fecha límite");
+        const f = await ficha.boundingBox();
+        const c = await destinoCelda.boundingBox();
+        await pagina.mouse.move(f.x + f.width / 2, f.y + f.height / 2);
+        await pagina.mouse.down();
+        await pagina.mouse.move(f.x + f.width / 2 + 10, f.y + f.height / 2 + 10, { steps: 4 });
+        await pagina.mouse.move(c.x + c.width / 2, c.y + c.height - 12, { steps: 12 });
+        await pagina.mouse.up();
+        await pagina.waitForTimeout(400);
+      };
+      // Tiene día planificado (hoy a las 15:00): se mueve ese día, con su hora, y la fecha límite queda.
+      await arrastrarAzulejos();
+      let azul = (await estado()).tasks.find((t) => t.title === "Elegir azulejos");
+      afirmar(azul.plan_fecha === pasado && azul.plan_hora === "15:00" && azul.due_date === manana,
+        "arrastrar en el calendario una tarea planificada cambia el día en que la hacés");
+      // Sin día planificado, se ubica por la fecha límite y arrastrarla cambia esa fecha.
+      await editar("tasks", azul.id, { plan_fecha: null, plan_hora: null });
+      await pagina.reload();
+      await pagina.getByRole("button", { name: /tarea/ }).first().waitFor();
+      await arrastrarAzulejos();
+      azul = (await estado()).tasks.find((t) => t.title === "Elegir azulejos");
+      afirmar(azul.due_date === pasado && azul.plan_fecha === null, "arrastrar una tarea a otro día cambia la fecha límite");
     } else {
       console.log("  – arrastre entre días omitido (fin de mes)");
     }

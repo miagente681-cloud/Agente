@@ -1,3 +1,5 @@
+import { Suspense } from "react";
+import { AbrirTareaDelEnlace } from "@/components/abrir-tarea-enlace";
 import { AvisoLlamada } from "@/components/aviso-llamada";
 import { BarraInferior, BarraLateral } from "@/components/navegacion";
 import { Paleta } from "@/components/paleta";
@@ -24,6 +26,9 @@ export default function LayoutApp({ children }: LayoutProps<"/">) {
         <BarraInferior />
       </div>
       <DetalleTarea />
+      <Suspense fallback={null}>
+        <AbrirTareaDelEnlace />
+      </Suspense>
       <AvisoLlamada />
       <Paleta />
     </ProveedorDatos>

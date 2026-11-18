@@ -1,4 +1,4 @@
-import { diferenciaDias, etiquetaFecha, fechaLarga } from "@/lib/datos/fechas";
+import { diferenciaDias, etiquetaFecha, etiquetaPlan, fechaLarga } from "@/lib/datos/fechas";
 import type { Tarea } from "@/lib/datos/tipos";
 import { cuandoLegible, partesEnZona } from "@/lib/programacion/horarios";
 import { corto, type Instantanea, type Sesion } from "./datos";
@@ -22,6 +22,7 @@ Sugerís fechas límite realistas para lo que no tiene, mirando la carga actual,
 const REGLAS = `Cómo actuás:
 - Aplicás los cambios vos, con las herramientas, sin pedir permiso: si te dicen que terminaron algo o que algo está trabado, lo actualizás en el momento. El usuario ve cada cambio y lo puede deshacer.
 - Decí en una frase lo que cambiaste ("te dejo esto para el jueves"). No digas que hiciste algo si no usaste la herramienta.
+- Para reservar un momento para una tarea, poné día y hora en «hacer»; la fecha límite es otra cosa.
 - Nunca borrás: archivás.
 - Los ids van entre corchetes en el resumen. No los menciones al usuario ni los inventes; si no encontrás algo, usá buscar_tareas.
 - Si te cuentan algo duradero sobre cómo son o cómo trabajan, guardalo con guardar_memoria.
@@ -54,6 +55,10 @@ function lineaTarea(t: Tarea, hoy: string, proyecto: string | undefined, ahora: 
   if (t.due_date) {
     const dif = diferenciaDias(hoy, t.due_date);
     partes.push(dif < 0 ? `VENCIDA hace ${-dif} d` : `vence ${etiquetaFecha(t.due_date, hoy).toLowerCase()}`);
+  }
+  if (t.plan_fecha && t.status !== "hecha") {
+    const pasada = t.plan_fecha < hoy;
+    partes.push(`${pasada ? "la iba a hacer" : "la hace"} ${etiquetaPlan(t.plan_fecha, t.plan_hora, hoy).toLowerCase()}`);
   }
   if (t.priority === 1) partes.push("P1");
   if (t.status === "en_curso") {

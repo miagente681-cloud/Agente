@@ -233,6 +233,30 @@ describe("herramientas", () => {
     expect(tabla("change_log")[0].old_values).toMatchObject({ due_date: "2026-11-05", priority: 2 });
   });
 
+  it("planifica el día y la hora en que se hace una tarea, aparte de la fecha límite, y se puede deshacer", async () => {
+    const ctx = await contexto();
+    await ejecutarHerramienta(ctx, "actualizar_tarea", { tarea_id: corto(ctx.azulejos.id), hacer: "2026-11-12 15:00" });
+    expect(tabla("tasks").find((t) => t.id === ctx.azulejos.id)).toMatchObject({
+      plan_fecha: "2026-11-12", plan_hora: "15:00", due_date: "2026-11-05",
+    });
+    expect(ctx.cambios[0].summary).toBe("«Elegir azulejos»: la hacés jue 12 a las 15:00");
+    // Si ya está así, no cambia nada (la base devuelve la hora con segundos).
+    Object.assign(ctx.datos.tareas.find((t) => t.id === ctx.azulejos.id)!, { plan_hora: "15:00:00" });
+    expect((await ejecutarHerramienta(ctx, "actualizar_tarea", { tarea_id: corto(ctx.azulejos.id), hacer: "2026-11-12 15:00" })).resultado)
+      .toMatchObject({ nota: expect.stringMatching(/Ya estaba así/) });
+    await deshacerCambio(sb, ctx.cambios[0].id);
+    expect(tabla("tasks").find((t) => t.id === ctx.azulejos.id)).toMatchObject({ plan_fecha: null, plan_hora: null });
+
+    const horaMala = await ejecutarHerramienta(ctx, "actualizar_tarea", { tarea_id: corto(ctx.azulejos.id), hacer: "2026-11-12 25:00" });
+    expect(horaMala.clase).toBe("invalida");
+
+    await ejecutarHerramienta(ctx, "crear_tarea", { proyecto_id: corto(ctx.proyecto.id), titulo: "Llamar al plomero", hacer: "2026-11-10 09:30" });
+    expect(tabla("tasks").find((t) => t.title === "Llamar al plomero")).toMatchObject({
+      plan_fecha: "2026-11-10", plan_hora: "09:30", due_date: null,
+    });
+    expect(ctx.cambios.at(-1)?.summary).toBe("Nueva tarea en Reformar el baño: «Llamar al plomero», la hacés hoy a las 09:30");
+  });
+
   it("un id que no existe o argumentos mal formados vuelven como error, sin tocar nada", async () => {
     const ctx = await contexto();
     const noExiste = await ejecutarHerramienta(ctx, "actualizar_tarea", { tarea_id: "abcdef12", estado: "hecha" });
