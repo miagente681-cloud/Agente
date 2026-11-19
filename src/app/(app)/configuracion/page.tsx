@@ -11,6 +11,7 @@ export const metadata: Metadata = { title: "Configuración" };
 
 const MAS = [
   { href: "/calendario", nombre: "Calendario" },
+  { href: "/informes", nombre: "Informes" },
   { href: "/sesiones", nombre: "Sesiones" },
   { href: "/memoria", nombre: "Lo que sé de vos" },
   { href: "/configurar", nombre: "Estado de las integraciones" },

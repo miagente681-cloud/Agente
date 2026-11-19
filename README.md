@@ -7,6 +7,7 @@ Un gestor de proyectos para la vida personal, con un Agente de IA que conoce tus
 - **Ordenar lo que tenés que hacer:** áreas, proyectos, tareas y subtareas, con fechas y prioridades.
 - **Hablar con el Agente:** por escrito o por voz. Le contás cómo venís y él actualiza las tareas por vos; cada cambio se puede deshacer.
 - **No postergar:** el Agente te llama en los horarios que elijas y te manda recordatorios al celular.
+- **Medir cómo venís:** le pedís un informe al Agente («armame un informe de mis tareas hechas este mes») y te lo deja con números, gráficos y una lectura, listo para bajar en PDF.
 - **Que te conozca:** recuerda cómo trabajás y qué te frena, y lo podés ver y corregir.
 
 ## Cómo se usa
@@ -16,7 +17,8 @@ Un gestor de proyectos para la vida personal, con un Agente de IA que conoce tus
 3. **Elegí cuándo hacer cada tarea.** En el detalle de la tarea, «Cuándo la hacés» guarda el día y la hora, aparte de la fecha límite. A esa hora te llega una notificación.
 4. **Mirá tu día** en Hoy (lo que tiene hora, ordenado por hora), mové tarjetas en el Tablero o cambiá fechas arrastrando en el Calendario.
 5. **Hablá con el Agente** desde su pantalla: escribile o tocá «Hablar». Para terminar, decile que termine la sesión.
-6. **Configurá los avisos** en Configuración: rutinas de llamada, recordatorios y notificaciones del dispositivo.
+6. **Pedile informes.** Con tus palabras: tareas hechas, creadas, a tiempo o tarde, puntualidad, vencidas o pendientes; por día, semana, mes, proyecto, área o prioridad. Quedan en Informes, cada uno con su botón «Descargar PDF».
+7. **Configurá los avisos** en Configuración: rutinas de llamada, recordatorios y notificaciones del dispositivo.
 
 En el celular se instala como app desde el navegador («Agregar a pantalla de inicio»). En iPhone las notificaciones solo funcionan con la app instalada.
 

@@ -2,6 +2,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { etiquetaFecha, fechaValida, horaCorta } from "@/lib/datos/fechas";
 import type { Proyecto, Tarea } from "@/lib/datos/tipos";
+import { leerBloques } from "@/lib/informes/bloques";
+import {
+  calcularInforme, MAX_DIAS_PERIODO, resumenInforme, type FuenteInforme, type TareaInforme,
+} from "@/lib/informes/calcular";
+import { entradaLectura, ESPERA_LECTURA_MS, INSTRUCCIONES_LECTURA, limpiarLectura } from "@/lib/informes/lectura";
+import { diferenciaDias } from "@/lib/datos/fechas";
 import { buscarPorId, corto, type Instantanea, type Memoria } from "./datos";
 import type { DefHerramienta } from "./tipos";
 
@@ -32,6 +38,12 @@ export type Contexto = {
   /** El usuario pidió terminar la sesión: se cierra cuando el Agente termina de despedirse. */
   terminar?: boolean;
   mensajeId?: string | null;
+  /**
+   * Pide un texto al modelo liviano (lo arma el runner con los proveedores del
+   * turno). Si falta, lo que dependa de él se saltea: en las pruebas y cuando
+   * no hay ningún modelo.
+   */
+  redactar?: (sistema: string, entrada: string) => Promise<string | null>;
 };
 
 /** Error que se le devuelve al modelo para que corrija (no cuenta como falla del proveedor). */
@@ -119,6 +131,38 @@ const vistaTarea = (t: Tarea) => ({
   ...(t.blocked_reason ? { motivo_bloqueo: t.blocked_reason } : {}),
   ...(t.effort_minutes ? { esfuerzo_minutos: t.effort_minutes } : {}),
 });
+
+/**
+ * Todo lo que un informe necesita leer: las tareas (también las archivadas,
+ * que cuentan si se hicieron) y los nombres de proyectos y áreas. La API de
+ * Supabase devuelve como mucho 1.000 filas por pedido, así que se pagina.
+ */
+const PAGINA = 1000;
+const MAX_PAGINAS = 10;
+async function leerFuenteInforme(sb: SupabaseClient): Promise<FuenteInforme> {
+  const tareas: TareaInforme[] = [];
+  for (let pagina = 0; pagina < MAX_PAGINAS; pagina++) {
+    const { data, error } = await sb
+      .from("tasks")
+      .select("id,project_id,parent_id,title,status,priority,due_date,completed_at,created_at,archived_at")
+      .order("created_at")
+      .order("id")
+      .range(pagina * PAGINA, pagina * PAGINA + PAGINA - 1);
+    if (error) fallar("No se pudieron leer las tareas. Avisale al usuario y seguí.");
+    const filas = (data ?? []) as TareaInforme[];
+    tareas.push(...filas);
+    if (filas.length < PAGINA) break;
+  }
+  const [proyectos, areas] = await Promise.all([
+    sb.from("projects").select("id,name,area_id").limit(PAGINA),
+    sb.from("areas").select("id,name").limit(PAGINA),
+  ]);
+  return {
+    tareas,
+    proyectos: (proyectos.data ?? []) as FuenteInforme["proyectos"],
+    areas: (areas.data ?? []) as FuenteInforme["areas"],
+  };
+}
 
 // --- Definiciones --------------------------------------------------------------
 
@@ -509,6 +553,81 @@ export const HERRAMIENTAS = {
     },
   }),
 
+  armar_informe: definir({
+    descripcion: "Arma un informe de tareas (números, gráficos, listas) y lo guarda en Informes. Los números los calcula la app.",
+    esquema: z.object({
+      titulo: texto(120),
+      desde: fecha.describe("AAAA-MM-DD"),
+      hasta: fecha.describe("AAAA-MM-DD"),
+      bloques: z
+        .array(z.string().max(80))
+        .min(1)
+        .max(8)
+        .describe(
+          "«tipo medidas [por grupo]». Tipos: numero, barras, lineas, reparto, lista. Medidas: hechas, creadas, a_tiempo, tarde, vencidas, pendientes, puntualidad, atraso. Grupos: dia, semana, mes, proyecto, area, prioridad. Ej.: «barras hechas,creadas por semana»",
+        ),
+      proyecto_id: id("proyecto").optional(),
+      area_id: id("área").optional(),
+    }),
+    async ejecutar(ctx, a) {
+      const leidos = leerBloques(a.bloques);
+      if (!leidos.ok) fallar(leidos.error);
+      if (a.hasta < a.desde) fallar("«hasta» no puede ser anterior a «desde».");
+      if (diferenciaDias(a.desde, a.hasta) >= MAX_DIAS_PERIODO) fallar("El período es demasiado largo: como mucho dos años.");
+      const proyecto = a.proyecto_id ? proyectoDe(ctx, a.proyecto_id) : null;
+      const area = a.area_id
+        ? (buscarPorId(ctx.datos.areas, a.area_id) ?? fallar(`No hay ninguna área con id «${a.area_id}».`))
+        : null;
+
+      const fuente = await leerFuenteInforme(ctx.sb);
+      const datos = calcularInforme(
+        {
+          titulo: a.titulo,
+          desde: a.desde,
+          hasta: a.hasta,
+          proyectoId: proyecto?.id ?? null,
+          areaId: proyecto ? null : (area?.id ?? null),
+          bloques: leidos.ok ? leidos.bloques : [],
+        },
+        fuente,
+        { hoy: ctx.hoy, zona: ctx.datos.perfil.timezone },
+      );
+
+      // La lectura es un extra: si el modelo liviano no está o tarda, el informe sale igual.
+      const analisis = ctx.redactar
+        ? limpiarLectura(
+            await Promise.race([
+              ctx.redactar(INSTRUCCIONES_LECTURA, entradaLectura(a.titulo, datos)).catch(() => null),
+              new Promise<null>((listo) => setTimeout(() => listo(null), ESPERA_LECTURA_MS)),
+            ]),
+          )
+        : null;
+
+      const fila = { session_id: ctx.sesionId, titulo: a.titulo, desde: a.desde, hasta: a.hasta, datos, analisis };
+      const { data, error } = await ctx.sb.from("informes").insert(fila).select("id").single();
+      if (error || !data) {
+        fallar(
+          /máximo/.test((error as { message?: string } | null)?.message ?? "")
+            ? "Ya hay demasiados informes guardados. Decile que borre alguno en la sección Informes."
+            : "No se pudo guardar el informe. Avisale al usuario y seguí.",
+        );
+      }
+      const informeId = (data as { id: string }).id;
+      await registrar(ctx, {
+        table_name: "informes",
+        row_id: informeId,
+        operation: "crear",
+        summary: `Informe «${a.titulo}»`,
+        new_values: { titulo: a.titulo, desde: a.desde, hasta: a.hasta },
+      });
+      return {
+        ok: true,
+        numeros: resumenInforme(datos).map((l) => l.slice(0, 400)),
+        nota: "Quedó en la sección Informes, con botón para bajarlo en PDF. Contale lo principal en una o dos frases, usando solo estos números.",
+      };
+    },
+  }),
+
   reprogramar_llamada: definir({
     descripcion: "Mueve una llamada programada a otro día y hora (hora local del usuario).",
     esquema: z.object({
@@ -621,6 +740,22 @@ export async function guardarMemoria(
 }
 
 /** Las herramientas en el formato neutro que cada adaptador traduce al suyo. */
+/**
+ * Saca del esquema que ve el modelo los largos mínimos y máximos de textos y
+ * listas: ocupan lugar en cada pedido (el cupo de Groq es chico) y el modelo
+ * casi nunca los necesita. La validación no cambia: si se pasa, recibe el
+ * error y corrige.
+ */
+function aligerar(nodo: unknown): void {
+  if (Array.isArray(nodo)) return nodo.forEach(aligerar);
+  if (!nodo || typeof nodo !== "object") return;
+  const objeto = nodo as Record<string, unknown>;
+  for (const clave of ["minLength", "maxLength", "minItems", "maxItems"]) delete objeto[clave];
+  // Si la descripción ya dice el formato («AAAA-MM-DD…»), la expresión regular sobra.
+  if (typeof objeto.description === "string" && /AAAA|HH:MM/.test(objeto.description)) delete objeto.pattern;
+  Object.values(objeto).forEach(aligerar);
+}
+
 export function definiciones(nombres?: NombreHerramienta[]): DefHerramienta[] {
   return (Object.keys(HERRAMIENTAS) as NombreHerramienta[])
     .filter((n) => !nombres || nombres.includes(n))
@@ -629,6 +764,7 @@ export function definiciones(nombres?: NombreHerramienta[]): DefHerramienta[] {
       // Se quita lo que algunos proveedores rechazan y no aporta.
       delete esquema.$schema;
       delete esquema.additionalProperties;
+      aligerar(esquema);
       return { nombre, descripcion: HERRAMIENTAS[nombre].descripcion, parametros: esquema };
     });
 }

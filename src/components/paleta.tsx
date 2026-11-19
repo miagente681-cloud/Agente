@@ -15,7 +15,7 @@ import { parsearTarea } from "@/lib/datos/parsear-tarea";
  *   g y una letra va a una sección      ?      muestra los atajos
  */
 const IR_A: Record<string, string> = {
-  h: "/hoy", t: "/tablero", c: "/calendario", p: "/proyectos", a: "/chat", s: "/sesiones", m: "/memoria", o: "/configuracion",
+  h: "/hoy", t: "/tablero", c: "/calendario", p: "/proyectos", a: "/chat", s: "/sesiones", m: "/memoria", i: "/informes", o: "/configuracion",
 };
 const DESTINOS = [
   ...SECCIONES.map((s) => ({ href: s.href, nombre: s.nombre })),

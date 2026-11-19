@@ -13,7 +13,7 @@ const BETO = "22222222-2222-2222-2222-222222222222";
 const TABLAS = [
   "profiles", "areas", "projects", "tasks", "call_routines", "availability_windows",
   "sessions", "messages", "project_log", "memories", "change_log",
-  "push_subscriptions", "voice_usage", "llm_usage", "limites_frecuencia", "reminders",
+  "push_subscriptions", "voice_usage", "llm_usage", "limites_frecuencia", "reminders", "informes",
 ];
 
 let db: PGlite;
@@ -402,6 +402,43 @@ describe("auditoría de seguridad: lo que un usuario común ya no puede hacer", 
         [rows[0].id],
       );
       expect(marcada[0].status).toBe("pendiente");
+    });
+  });
+
+  it("los informes son de cada persona, con tamaño acotado y atados a su propia sesión", async () => {
+    const datos = JSON.stringify({ version: 1, bloques: [] });
+    let sesionDeAna = "";
+    await como(ANA, async () => {
+      const { rows: sesion } = await db.query<{ id: string }>("insert into public.sessions (kind, channel) values ('chat', 'texto') returning id");
+      sesionDeAna = sesion[0].id;
+      const { rows } = await db.query<{ id: string; user_id: string }>(
+        "insert into public.informes (titulo, desde, hasta, datos, session_id) values ('Noviembre', '2026-11-01', '2026-11-30', $1, $2) returning id, user_id",
+        [datos, sesionDeAna],
+      );
+      expect(rows[0].user_id).toBe(ANA);
+      await expect(
+        db.query("insert into public.informes (titulo, desde, hasta, datos) values ('Al revés', '2026-11-30', '2026-11-01', $1)", [datos]),
+      ).rejects.toThrow(/check/);
+      await expect(
+        db.query("insert into public.informes (titulo, desde, hasta, datos) values ($1, '2026-11-01', '2026-11-30', $2)", ["x".repeat(161), datos]),
+      ).rejects.toThrow(/check/);
+      await expect(
+        db.query("update public.informes set analisis = repeat('x', 2001) where id = $1", [rows[0].id]),
+      ).rejects.toThrow(/check/);
+    });
+    await como(BETO, async () => {
+      expect((await db.query("select 1 from public.informes")).rows).toEqual([]);
+      expect((await db.query("delete from public.informes")).affectedRows).toBe(0);
+      // No puede colgar un informe suyo de la sesión de otra persona.
+      await expect(
+        db.query("insert into public.informes (titulo, desde, hasta, datos, session_id) values ('Ajeno', '2026-11-01', '2026-11-30', $1, $2)", [datos, sesionDeAna]),
+      ).rejects.toThrow(/informes_session_mismo_dueno/);
+    });
+    await como(ANA, async () => {
+      // Si se borra la sesión, el informe queda (sin sesión).
+      await db.query("delete from public.sessions where id = $1", [sesionDeAna]);
+      const { rows } = await db.query<{ session_id: string | null }>("select session_id from public.informes where titulo = 'Noviembre'");
+      expect(rows).toEqual([{ session_id: null }]);
     });
   });
 

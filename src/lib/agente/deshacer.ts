@@ -15,7 +15,7 @@ type FilaCambio = {
   undone_at: string | null;
 };
 
-const TABLAS = ["tasks", "projects", "areas", "memories", "project_log", "sessions", "call_routines"];
+const TABLAS = ["tasks", "projects", "areas", "memories", "project_log", "sessions", "call_routines", "informes"];
 
 export async function deshacerCambio(sb: SupabaseClient, cambioId: string): Promise<{ ok: boolean; mensaje?: string }> {
   const { data } = await sb
@@ -31,14 +31,15 @@ export async function deshacerCambio(sb: SupabaseClient, cambioId: string): Prom
   let error: unknown = null;
 
   if (c.operation === "crear") {
-    // Lo que creó el Agente no se borra: se archiva (salvo una nota de bitácora,
-    // que no tiene dónde archivarse).
+    // Lo que creó el Agente no se borra: se archiva (salvo una nota de bitácora
+    // o un informe, que no tienen dónde archivarse).
     if (c.table_name === "tasks") {
       ({ error } = await sb.from("tasks").update({ archived_at: ahora }).or(`id.eq.${c.row_id},parent_id.eq.${c.row_id}`));
     } else if (c.table_name === "projects") {
       ({ error } = await sb.from("projects").update({ status: "archivado" }).eq("id", c.row_id));
-    } else if (c.table_name === "project_log") {
-      ({ error } = await sb.from("project_log").delete().eq("id", c.row_id));
+    } else if (c.table_name === "project_log" || c.table_name === "informes") {
+      // Un informe se calcula de nuevo cuando se quiera: deshacerlo es borrarlo.
+      ({ error } = await sb.from(c.table_name).delete().eq("id", c.row_id));
     } else {
       ({ error } = await sb.from(c.table_name).update({ archived_at: ahora }).eq("id", c.row_id));
     }

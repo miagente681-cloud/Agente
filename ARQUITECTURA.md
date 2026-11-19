@@ -10,7 +10,7 @@ Este documento es el mapa del proyecto. Está pensado para que alguien (una pers
 | `README.md` | Presentación breve: para qué sirve y cómo se usa |
 | `.env.example` | Lista completa de variables, sin valores |
 
-Última actualización: 18/11/2026.
+Última actualización: 19/11/2026.
 
 ---
 
@@ -20,6 +20,7 @@ Un gestor de proyectos personal (PWA) con un Agente de IA que conoce los proyect
 
 - **Panel:** áreas → proyectos → tareas → subtareas, en cuatro vistas (Hoy, Tablero, Calendario, Proyectos).
 - **Agente:** chat escrito, chat de voz y llamadas programadas. Cambia el panel con herramientas; cada cambio se puede deshacer.
+- **Informes:** mediciones, gráficos y listas de tareas que se le piden al Agente; se ven en la app y se bajan en PDF.
 - **Memoria:** lo que el Agente aprende de la persona, visible y editable en «Lo que sé de vos».
 - **Avisos:** llamadas programadas y recordatorios por notificación push.
 
@@ -56,6 +57,7 @@ src/
       chat/                 Chat escrito con el Agente
       llamada/[id]/         Pantalla de llamada o chat de voz
       bienvenida/           Entrevista inicial
+      informes/             Lista de informes y, en [id]/, cada informe con su botón de PDF
       memoria/              «Lo que sé de vos»
       sesiones/             Historial y detalle de cada sesión
       configuracion/        Un archivo por tarjeta: agente, claude, voz, llamadas, recordatorios, cuenta, contrasena, datos
@@ -66,6 +68,7 @@ src/
       proveedores/          Un adaptador por modelo: claude, gemini, openai (Groq), ollama
       claude/               Precios, modelos por uso, presupuesto y tope
     datos/                  Almacén del panel en el navegador, fechas, orden, perfil
+    informes/               Informes: medidas y bloques, cálculo, geometría de gráficos, PDF (ver sección 8 bis)
     voz/                    Llamada, Azure, voz del navegador, cupo, desbloqueo de audio en iPhone
     programacion/           horarios.ts (lógica pura) y tick.ts (lo que corre cada minuto)
     push/                   Suscripción (navegador), envío (servidor), lista de destinos válidos
@@ -93,6 +96,7 @@ Las migraciones de `supabase/migrations/` son la fuente de verdad. Todas las tab
 | `change_log` | Cada cambio del Agente, con el valor anterior, para deshacer | El servidor |
 | `call_routines`, `availability_windows` | Rutinas de llamada y franjas de disponibilidad | La persona |
 | `reminders` | Recordatorios push: hora, días, texto | La persona; el programador marca `last_sent_on` |
+| `informes` | Informes ya calculados: título, período, `datos` (bloques con sus números) y `analisis` (lectura del Agente) | El Agente (herramienta `armar_informe`); la persona los borra |
 | `push_subscriptions` | Dispositivos con notificaciones activadas, y el resultado del último aviso (`ultimo_envio_at`, `ultimo_resultado`, `ultimo_detalle`) | La persona (solo destinos de push reales); el servidor anota cada envío |
 | `llm_usage` | Cada pedido a Claude con su costo | **Solo el servidor** (clave de servicio). La persona solo lee |
 | `voice_usage` | Uso mensual de Azure | **Solo el servidor** |
@@ -102,7 +106,7 @@ Las migraciones de `supabase/migrations/` son la fuente de verdad. Todas las tab
 
 - **Columnas de `sessions` que solo escribe el servidor:** `providers_used`, `context_snapshot`, `context_snapshot_at`, `history_summary`, `history_summary_until`. Con la sesión de un usuario tampoco se puede crear una `llamada_programada` ni cambiar `kind`. Lo impone el disparador `sessions_proteger`.
 - **Referencias del mismo dueño:** todas las claves foráneas entre tablas son compuestas `(id, user_id)`. Una fila no puede apuntar a algo de otra persona.
-- **Máximos por persona:** 10 suscripciones push, 20 rutinas, 50 ventanas, 10 recordatorios.
+- **Máximos por persona:** 10 suscripciones push, 20 rutinas, 50 ventanas, 10 recordatorios, 200 informes.
 - **Largo máximo** en los textos (por ejemplo `messages.content` ≤ 16.000 caracteres).
 - **Funciones solo para la clave de servicio:** `gasto_claude_mes`, `gasto_claude_desglose`, `consumir_limite`, `uso_voz_global`, `sumar_uso_voz`.
 
@@ -168,6 +172,18 @@ Claude es el único proveedor pago. Las reglas están en `claude/` y en `segurid
 Para ver si el programador anda: `select status_code, content from net._http_response order by created desc limit 5;` (200 = bien, 401 = el secreto no coincide, 503 = falta una variable en Vercel).
 
 Para ver si los avisos llegan: `select device_label, ultimo_envio_at, ultimo_resultado, ultimo_detalle from push_subscriptions;`. Un `403 BadJwtToken` de Apple suele indicar claves VAPID cambiadas o un `VAPID_SUBJECT` que no es `https://…` ni `mailto:…`.
+
+## 8 bis. Informes
+
+Todo en `src/lib/informes/`. La regla: **los números los calcula la app, nunca el modelo.**
+
+1. La persona le pide un informe al Agente. El modelo llama a `armar_informe` con título, período y bloques escritos como texto corto («barras hechas,creadas por semana»).
+2. `bloques.ts` lee y valida cada bloque (si está mal, devuelve una explicación para que el modelo corrija).
+3. `calcular.ts` → `calcularInforme()` hace las cuentas: función pura que recibe las tareas y devuelve los bloques con sus números. Ahí está definido qué cuenta cada medida.
+4. `lectura.ts`: el modelo liviano escribe un párrafo a partir de los números (opcional; con tiempo máximo).
+5. Se guarda en la tabla `informes` ya calculado, y queda en el registro de cambios (tarjeta «Ver informe» en el chat; deshacer lo borra).
+6. La pantalla (`app/(app)/informes/[id]`) valida la forma de lo guardado (`tipos.ts` → `DatosInforme`) y lo dibuja con `components/informes/`.
+7. `escena.ts` calcula la geometría de cada gráfico una sola vez; la dibujan el SVG de la pantalla (`grafico.tsx`) y el PDF (`pdf.ts`, con `pdf-lib`, en el navegador). Los colores están en `colores.ts` y están validados: no cambiarlos a ojo.
 
 ## 9. Endpoints
 
@@ -237,6 +253,9 @@ Antes de subir un cambio tienen que pasar las cuatro cosas. Los servicios de men
 | Agregar una tabla o columna | Migración nueva (`000N_nombre.sql`) con RLS; aplicarla en Supabase; sumarla en `tests/esquema.test.ts`, `supabase-falso.cjs`, la exportación (`configuracion/datos.tsx`) y el borrado (`api/cuenta/borrar`) |
 | Cambiar cuándo se llama o se reprograma | `lib/programacion/horarios.ts` (y sus pruebas en `tests/programacion.test.ts`) |
 | Cambiar qué dice una notificación | `lib/programacion/tick.ts` (los objetos `CargaPush`) |
+| Agregar una medida a los informes | `lib/informes/tipos.ts` (`MEDIDAS`, `INFO_MEDIDA`, con su color) y `calcular.ts` (`deMedida` o `valor`, y la forma de su lista); sumarla a la descripción de `armar_informe` en `herramientas.ts` (cuidando el tope de 7.000 caracteres) y probarla en `tests/informes.test.ts` |
+| Agregar un tipo de bloque o un grupo a los informes | `lib/informes/tipos.ts` y `bloques.ts` (lectura y reglas), `calcular.ts`, y si se dibuja, `escena.ts` (lo toman solos la pantalla y el PDF) |
+| Cambiar cómo se ve un gráfico o el PDF | Gráficos: `lib/informes/escena.ts` (vale para los dos). Solo pantalla: `components/informes/`. Solo PDF: `lib/informes/pdf.ts`. Mirar el resultado: `GUARDAR_PDF=/ruta/informe.pdf npx vitest run tests/informes-pdf.test.ts` |
 | Cambiar cómo se lee una tarea escrita en una línea (fecha, hora, prioridad) | `lib/datos/parsear-tarea.ts` (y sus pruebas en `tests/datos.test.ts`) |
 | Agregar un endpoint | `app/api/.../route.ts`: validar con `usuarioActual()`, y si gasta, `frenarSiHaceFalta()` con una clave nueva en `seguridad/frecuencia.ts` |
 | Sumar una integración con clave | Variable en `.env.example` y `CREDENCIALES.md`, entrada en `lib/integraciones.ts`, y que la función degrade si falta |
@@ -246,7 +265,7 @@ Antes de subir un cambio tienen que pasar las cuatro cosas. Los servicios de men
 
 - **Desplegar:** un `git push` a `claude/pensive-galileo-w7i9nk` despliega producción en Vercel. No hay entorno de pruebas separado: todo push va a la app en uso. La rama `main` existe pero está atrasada.
 - **Variables:** una variable nueva o cambiada en Vercel recién se aplica al volver a desplegar.
-- **Migraciones:** se aplican a mano en Supabase (SQL Editor o la API de administración), en orden. Hasta hoy están aplicadas de la 0001 a la 0008.
+- **Migraciones:** se aplican a mano en Supabase (SQL Editor o la API de administración), en orden. Hasta hoy están aplicadas de la 0001 a la 0009.
 - **Registros:** Vercel (plan Hobby) guarda solo la última hora. El servidor escribe líneas `[agente]` cuando un proveedor falla, `[claude]` por cada pedido (tokens y costo, sin datos de la persona) y `[push]` cuando un aviso no se pudo entregar.
 - **Costo:** todo es gratuito salvo Claude. No activar facturación en ningún otro proveedor.
 

@@ -139,6 +139,8 @@ export async function* correrTurno(p: {
     hoy: partesEnZona(ahora, datos.perfil.timezone).fecha,
     datos,
     cambios: [],
+    redactar: (sistema, entrada) =>
+      completar(p.proveedores, { liviano: true, uso: "fondo", sistema, mensajes: [{ rol: "usuario", texto: entrada }] }),
   };
 
   let consulta = sb

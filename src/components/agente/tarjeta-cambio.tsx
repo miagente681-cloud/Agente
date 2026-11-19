@@ -1,6 +1,7 @@
 "use client";
 
-import { Archive, Pencil, Plus, Undo2 } from "lucide-react";
+import Link from "next/link";
+import { Archive, ChartColumn, Pencil, Plus, Undo2 } from "lucide-react";
 import { useState } from "react";
 import { deshacerCambio } from "@/lib/agente/deshacer";
 import { useDatos } from "@/lib/datos/almacen";
@@ -11,6 +12,9 @@ export type CambioVista = {
   operation: "crear" | "actualizar" | "archivar";
   summary: string;
   undone_at?: string | null;
+  /** Sobre qué fue el cambio: sirve para enlazar lo que se puede abrir (un informe). */
+  table_name?: string;
+  row_id?: string;
 };
 
 const ICONO = { crear: Plus, actualizar: Pencil, archivar: Archive };
@@ -20,7 +24,8 @@ export function TarjetaCambio({ cambio }: { cambio: CambioVista }) {
   const { recargar, avisar } = useDatos();
   const [deshecho, setDeshecho] = useState(Boolean(cambio.undone_at));
   const [ocupado, setOcupado] = useState(false);
-  const Icono = ICONO[cambio.operation] ?? Pencil;
+  const esInforme = cambio.table_name === "informes" && Boolean(cambio.row_id);
+  const Icono = esInforme ? ChartColumn : (ICONO[cambio.operation] ?? Pencil);
 
   async function deshacer() {
     setOcupado(true);
@@ -39,8 +44,16 @@ export function TarjetaCambio({ cambio }: { cambio: CambioVista }) {
     >
       <Icono size={13} aria-hidden className="shrink-0 text-acento" />
       <span className={`min-w-0 flex-1 ${deshecho ? "line-through" : ""}`}>{cambio.summary}</span>
+      {esInforme && !deshecho ? (
+        <Link
+          href={`/informes/${cambio.row_id}`}
+          className="flex h-8 shrink-0 items-center rounded-md bg-acento px-3 font-medium text-sobre-acento hover:bg-acento-fuerte"
+        >
+          Ver informe
+        </Link>
+      ) : null}
       {deshecho ? (
-        <span className="px-2 text-xs text-texto-3">Deshecho</span>
+        <span className="px-2 text-xs text-texto-3">{esInforme ? "Borrado" : "Deshecho"}</span>
       ) : (
         <button
           type="button"

@@ -28,7 +28,7 @@ export function DetalleSesion({ id }: { id: string }) {
     const sb = supabaseBrowser();
     const [s, c, m, u] = await Promise.all([
       sb.from("sessions").select("*").eq("id", id).maybeSingle(),
-      sb.from("change_log").select("id,operation,summary,undone_at").eq("session_id", id).order("created_at"),
+      sb.from("change_log").select("id,operation,summary,undone_at,table_name,row_id").eq("session_id", id).order("created_at"),
       sb.from("messages").select("id,role,content,provider,model").eq("session_id", id).in("role", ["usuario", "agente"]).order("created_at").limit(400),
       sb.from("llm_usage").select("cost_usd").eq("session_id", id),
     ]);

@@ -112,7 +112,7 @@ export function Chat() {
       if (abierta) {
         const [mensajes, cambios] = await Promise.all([
           sb.from("messages").select("id,role,content,created_at,provider,model").eq("session_id", abierta.id).in("role", ["usuario", "agente"]).order("created_at").limit(300),
-          sb.from("change_log").select("id,message_id,operation,summary,undone_at").eq("session_id", abierta.id).order("created_at"),
+          sb.from("change_log").select("id,message_id,operation,summary,undone_at,table_name,row_id").eq("session_id", abierta.id).order("created_at"),
         ]);
         if (!vigente) return;
         // Una charla abandonada hace horas se cierra sola (así se aprende de ella)

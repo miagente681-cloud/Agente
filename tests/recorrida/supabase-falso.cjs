@@ -31,7 +31,7 @@ function cookieDeSesion() {
 const TABLAS = [
   "profiles", "areas", "projects", "tasks", "call_routines", "availability_windows", "sessions",
   "messages", "project_log", "memories", "change_log", "push_subscriptions", "voice_usage", "llm_usage",
-  "limites_frecuencia", "reminders",
+  "limites_frecuencia", "reminders", "informes",
 ];
 
 /** Una sesión de Supabase Auth como la devuelve el servidor real. */
@@ -58,6 +58,7 @@ function crearServidor() {
     areas: () => ({ color: "#8b8b94", icon: null, sort_order: 0, archived_at: null }),
     projects: () => ({ area_id: null, goal: null, description: null, status: "activo", priority: 2, due_date: null, sort_order: 0 }),
     tasks: () => ({ parent_id: null, description: null, status: "pendiente", priority: 2, due_date: null, due_set_by: null, effort_minutes: null, blocked_reason: null, plan_fecha: null, plan_hora: null, plan_avisado_para: null, sort_order: 0, completed_at: null, archived_at: null, status_changed_at: ahora() }),
+    informes: () => ({ session_id: null, analisis: null }),
     reminders: () => ({ message: "Entrá a documentar tu día.", weekdays: [1, 2, 3, 4, 5], active: true, last_sent_on: null }),
     call_routines: () => ({ weekdays: [], target_minutes: 10, focus: null, active: true }),
     push_subscriptions: () => ({ device_label: null, ultimo_envio_at: null, ultimo_resultado: null, ultimo_detalle: null }),

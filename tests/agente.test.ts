@@ -7,6 +7,7 @@ import { deshacerCambio } from "@/lib/agente/deshacer";
 import { definiciones, ejecutarHerramienta, guardarMemoria, type Contexto } from "@/lib/agente/herramientas";
 import { correrTurno, resumirSiHaceFalta, type EventoTurno } from "@/lib/agente/runner";
 import { juntar, levantarSupabase, proveedorFalso, type ServidorSupabase } from "./apoyo/falsos";
+import { DatosInforme } from "@/lib/informes/tipos";
 
 let servidor: ServidorSupabase;
 let sb: SupabaseClient;
@@ -86,6 +87,29 @@ describe("un turno del Agente", () => {
     expect(await deshacerCambio(sb, cambios[1].id)).toEqual({ ok: true });
     expect(tabla("tasks").find((t) => t.id === plomero.id)).toMatchObject({ status: "en_curso", blocked_reason: null });
     expect(tabla("change_log").every((c) => c.undone_at)).toBe(true);
+  });
+
+  it("«armame un informe»: lo calcula la app, el modelo liviano escribe la lectura y el Agente comenta los números", async () => {
+    const { azulejos, sesion } = sembrar();
+    Object.assign(tabla("tasks").find((t) => t.id === azulejos.id)!, { status: "hecha", completed_at: "2026-11-04T15:00:00Z" });
+    const gemini = proveedorFalso("gemini", [
+      { llamadas: [{ nombre: "armar_informe", argumentos: { titulo: "Noviembre", desde: "2026-11-01", hasta: "2026-11-30", bloques: ["numero hechas", "lista hechas"] } }] },
+      { texto: "Hiciste una tarea y fue a tiempo. Buen arranque: sostené el ritmo." },
+      { texto: "Te armé el informe: una tarea hecha en noviembre. Lo tenés en Informes." },
+    ]);
+    const eventos = await juntar(
+      correrTurno({ sb, sesion, proveedores: [gemini], ahora: AHORA, entrada: { texto: "Armame un informe de noviembre" } }),
+    );
+    expect(deTipo(eventos, "error")).toEqual([]);
+    expect(deTipo(eventos, "cambio").map((e) => e.cambio)).toMatchObject([{ table_name: "informes", operation: "crear", summary: "Informe «Noviembre»" }]);
+    expect(deTipo(eventos, "fin")[0].texto).toContain("Te armé el informe");
+    expect(tabla("informes")[0]).toMatchObject({ titulo: "Noviembre", analisis: "Hiciste una tarea y fue a tiempo. Buen arranque: sostené el ritmo." });
+    // El segundo pedido es el de la lectura: va al modelo liviano, sin herramientas y con los números.
+    expect(gemini.pedidos[1]).toMatchObject({ liviano: true, uso: "fondo" });
+    expect(gemini.pedidos[1].herramientas ?? []).toEqual([]);
+    expect(gemini.pedidos[1].mensajes[0]).toMatchObject({ texto: expect.stringContaining("Tareas hechas: 1") });
+    // Y el tercero recibe los números como resultado de la herramienta.
+    expect(JSON.stringify(gemini.pedidos[2].mensajes.at(-1))).toContain("Tareas hechas: 1");
   });
 
   it("si el principal devuelve un error de límite, sigue el de respaldo sin cortar", async () => {
@@ -187,7 +211,7 @@ describe("herramientas", () => {
   it("se definen una sola vez, con un esquema que aceptan todos los proveedores", () => {
     const defs = definiciones();
     expect(defs.map((d) => d.nombre)).toEqual(
-      expect.arrayContaining(["ver_proyecto", "crear_tarea", "actualizar_tarea", "archivar_tarea", "anotar_bitacora", "guardar_memoria", "reprogramar_llamada"]),
+      expect.arrayContaining(["ver_proyecto", "crear_tarea", "actualizar_tarea", "archivar_tarea", "anotar_bitacora", "guardar_memoria", "reprogramar_llamada", "armar_informe"]),
     );
     for (const d of defs) {
       expect(d.parametros.type).toBe("object");
@@ -255,6 +279,69 @@ describe("herramientas", () => {
       plan_fecha: "2026-11-10", plan_hora: "09:30", due_date: null,
     });
     expect(ctx.cambios.at(-1)?.summary).toBe("Nueva tarea en Reformar el baño: «Llamar al plomero», la hacés hoy a las 09:30");
+  });
+
+  it("arma un informe con números calculados por la app, lo guarda y se puede deshacer", async () => {
+    const ctx = await contexto();
+    // Dos tareas hechas en noviembre (una a tiempo, otra tarde) y una de octubre.
+    Object.assign(tabla("tasks").find((t) => t.id === ctx.azulejos.id)!, { status: "hecha", completed_at: "2026-11-06T15:00:00Z" });
+    Object.assign(tabla("tasks").find((t) => t.id === ctx.griferia.id)!, { status: "hecha", completed_at: "2026-11-09T15:00:00Z", due_date: "2026-11-09" });
+    servidor.sembrar("tasks", { project_id: ctx.proyecto.id, title: "Vieja y archivada", status: "hecha", completed_at: "2026-10-20T15:00:00Z", archived_at: "2026-10-21T15:00:00Z" });
+    const pedidos: string[] = [];
+    ctx.redactar = async (sistema, entrada) => {
+      pedidos.push(sistema + "\n" + entrada);
+      return "**Hiciste dos tareas**, pero una se te pasó de fecha. Poné las fechas con un día de margen.";
+    };
+
+    const r = await ejecutarHerramienta(ctx, "armar_informe", {
+      titulo: "Tareas hechas en noviembre",
+      desde: "2026-11-01",
+      hasta: "2026-11-30",
+      bloques: ["numero hechas", "numero puntualidad", "barras hechas por semana", "lista hechas"],
+      proyecto_id: corto(ctx.proyecto.id),
+    });
+    expect(r.clase).toBe("ok");
+    expect((r.resultado as { numeros: string[] }).numeros.slice(0, 2)).toEqual([
+      "Tareas hechas: 2 (período anterior: 1)",
+      "Puntualidad: 50 %",
+    ]);
+
+    const informe = tabla("informes")[0];
+    expect(informe).toMatchObject({
+      titulo: "Tareas hechas en noviembre", desde: "2026-11-01", hasta: "2026-11-30", session_id: ctx.sesionId,
+      // La lectura sale limpia de formato.
+      analisis: "Hiciste dos tareas, pero una se te pasó de fecha. Poné las fechas con un día de margen.",
+    });
+    const datos = DatosInforme.parse(informe.datos);
+    expect(datos).toMatchObject({ hoy: "2026-11-10", zona: "America/Montevideo", filtro: "Proyecto: Reformar el baño" });
+    expect(datos.bloques.map((b) => b.tipo)).toEqual(["numero", "numero", "barras", "lista"]);
+    expect(datos.bloques[3]).toMatchObject({ total: 2, filas: [{ titulo: "Elegir azulejos", detalle: "1 día tarde" }, { titulo: "Comprar grifería", detalle: "A tiempo" }] });
+    // El modelo liviano recibe los números ya calculados, no las tareas.
+    expect(pedidos[0]).toContain("Tareas hechas: 2");
+    expect(pedidos[0]).not.toContain("Elegir azulejos");
+
+    expect(ctx.cambios[0]).toMatchObject({ table_name: "informes", row_id: informe.id, operation: "crear", summary: "Informe «Tareas hechas en noviembre»" });
+    await deshacerCambio(sb, ctx.cambios[0].id);
+    expect(tabla("informes")).toHaveLength(0);
+  });
+
+  it("un informe mal pedido vuelve con la explicación, y sin modelo liviano sale sin lectura", async () => {
+    const ctx = await contexto();
+    const base = { titulo: "Prueba", desde: "2026-11-01", hasta: "2026-11-30" };
+    const malBloque = await ejecutarHerramienta(ctx, "armar_informe", { ...base, bloques: ["barras hechas,a_tiempo por semana"] });
+    expect(malBloque).toMatchObject({ clase: "error", resultado: { error: expect.stringMatching(/no van en el mismo gráfico/) } });
+    const alReves = await ejecutarHerramienta(ctx, "armar_informe", { ...base, desde: "2026-12-01", bloques: ["numero hechas"] });
+    expect(alReves).toMatchObject({ clase: "error", resultado: { error: expect.stringMatching(/anterior a «desde»/) } });
+    const fechaMala = await ejecutarHerramienta(ctx, "armar_informe", { ...base, hasta: "2026-11-31", bloques: ["numero hechas"] });
+    expect(fechaMala.clase).toBe("invalida");
+    expect(tabla("informes")).toHaveLength(0);
+
+    // Si el modelo liviano falla, el informe se guarda igual.
+    ctx.redactar = async () => {
+      throw new Error("sin modelo");
+    };
+    expect((await ejecutarHerramienta(ctx, "armar_informe", { ...base, bloques: ["numero pendientes"] })).clase).toBe("ok");
+    expect(tabla("informes")[0]).toMatchObject({ analisis: null });
   });
 
   it("un id que no existe o argumentos mal formados vuelven como error, sin tocar nada", async () => {

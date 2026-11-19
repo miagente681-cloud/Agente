@@ -265,6 +265,32 @@ La persona pidió poder elegir, por cada tarea, la hora en que la va a hacer. Ha
 | Agente | `crear_tarea` y `actualizar_tarea` aceptan `hacer` («AAAA-MM-DD» o «AAAA-MM-DD HH:MM»; «ninguna» para quitarlo). El resumen del estado le muestra «la hace mié 19 15:00» y «la iba a hacer» si el día ya pasó. Una regla nueva le dice que para reservar un momento use `hacer` y no la fecha límite. Para que las definiciones sigan bajo 7.000 caracteres (cupo de Groq) se acortaron textos: el de los ids, la descripción de `actualizar_tarea` y la del motivo de bloqueo. |
 | Configuración compartida | La tarjeta de Notificaciones recibe el perfil de la de Llamadas en lugar de cargarlo aparte: dos copias del perfil se pisaban los ajustes al guardar. |
 
+## Informes del Agente (pedido el 19/11/2026)
+
+La persona pidió que el Agente pueda armar informes, gráficos y mediciones («un informe en PDF de mis tareas hechas en el mes»). Antes de implementar se le consultó y eligió: verlos en la app con descarga en PDF; flexibles y a pedido (no una lista fija); medir tareas hechas y puntualidad; sin envíos automáticos. Quedaron afuera por su elección: postergaciones y tiempo trabado (habría que guardar historial), tiempo real contra estimado (habría que cronometrar) y llamadas y sesiones.
+
+| Tema | Decisión |
+|---|---|
+| Quién calcula | La app, nunca el modelo. El Agente solo elige qué bloques lleva el informe; `src/lib/informes/calcular.ts` hace las cuentas (función pura, con pruebas). El modelo recibe los números ya calculados para comentarlos. |
+| Cómo lo pide el Agente | Herramienta `armar_informe`: título, período (`desde`, `hasta`), filtro opcional por proyecto o área y hasta 8 bloques. Cada bloque es un texto corto, «tipo medidas [por grupo]» («barras hechas,creadas por semana»). Es texto y no un objeto para que la definición de la herramienta sea chica (cupo de Groq). Si un bloque está mal, vuelve una explicación y el modelo corrige. |
+| Bloques | `numero` (con comparación contra el período anterior de igual largo), `barras`, `lineas` (solo en el tiempo), `reparto` (por proyecto, área o prioridad) y `lista` (las tareas, hasta 300 filas). |
+| Medidas | `hechas`, `creadas`, `a_tiempo`, `tarde`, `puntualidad` (% a tiempo de las que tenían fecha límite), `atraso` (promedio de días de las hechas tarde), y dos fotos de hoy: `vencidas` (sin hacer, con fecha pasada y anterior al fin del período) y `pendientes`. |
+| Qué cuenta | Solo tareas principales (las subtareas son pasos de una tarea). Una tarea hecha cuenta aunque después se haya archivado. El día es el de la zona horaria de la persona. |
+| Puntualidad | Compara el día en que se terminó con la fecha límite que la tarea tiene hoy: si la fecha se corrió, vale la última (no se guarda el historial de fechas). Las hechas sin fecha límite no entran en el porcentaje. Sin tareas con fecha, el valor es «sin dato», no 0 %. |
+| El informe es una foto | Se guarda ya calculado (tabla `informes`, migración 0009): un informe viejo dice lo mismo aunque las tareas cambien. Para tener números nuevos se pide otro. Máximo 200 por persona. |
+| Lectura del Agente | Un párrafo corto que escribe el modelo liviano a partir de los números (no ve las tareas). Es opcional: si no hay modelo o tarda más de 12 segundos, el informe sale sin lectura. |
+| Deshacer | El informe aparece en el chat como una tarjeta con «Ver informe» y «Deshacer». Deshacer lo borra (se puede volver a pedir), igual que una nota de bitácora. |
+| «Torta» | Si se pide una torta se arma un `reparto`: barras ordenadas con cantidad y porcentaje. Se comparan mejor que las porciones de un círculo, sobre todo cuando los valores son parecidos. |
+| Un eje por gráfico | Un porcentaje o un promedio no comparte gráfico con cantidades: va en un bloque aparte. |
+| Colores | Tres (azul, naranja, verde agua), validados de a pares con un verificador de paletas contra el fondo de la app y contra el papel: se distinguen con visión normal y con daltonismo. Cada medida tiene su color fijo (hechas y a tiempo, azul; tarde y vencidas, naranja; creadas y pendientes, verde). Dos medidas del mismo color no van en el mismo gráfico: el Agente recibe el aviso y las separa. Como mucho tres series. |
+| Eje de tiempo | Si el período es largo, baja solo la precisión: de días a semanas (más de 45 días) y de semanas a meses (más de 30 semanas). Las semanas van de lunes a domingo, recortadas al período. |
+| Rótulos | Con pocas columnas se rotulan todas; con muchas, solo la más alta. En las líneas, el último valor. El resto se lee con el eje, pasando el cursor (o tocando) o en «Ver como tabla». |
+| Pantalla y PDF iguales | La geometría de cada gráfico se calcula una sola vez (`escena.ts`) y la dibujan el SVG de la pantalla y el PDF. |
+| PDF | Se arma en el navegador con `pdf-lib` 1.17.1 (versión de 2021, estable y sin dependencias nativas; fijada). No hay servidor de por medio ni costo. Se carga recién al tocar «Descargar PDF». Tipografía Helvetica: lo que no puede escribir (emojis, flechas) se saca del texto. |
+| Bajarlo en el teléfono | En pantallas táctiles se abre el menú de compartir del sistema (Guardar en Archivos, WhatsApp, correo); si el navegador exige un toque directo, el botón pasa a «Guardar PDF» con el archivo ya listo. En computadora se descarga. **No se pudo probar en un iPhone real.** |
+| Tamaño de las herramientas | Para que `armar_informe` entre en los 7.000 caracteres (cupo de Groq), el esquema que ve el modelo ya no incluye largos mínimos y máximos ni la expresión regular cuando la descripción dice el formato. La validación no cambió. |
+| Seguridad | La tabla es de la persona (RLS «propio: todo»): no protege plata ni cupos. Como podría escribirla directo por la API, la app valida la forma de `datos` antes de mostrarlo. |
+
 ## Despliegue
 
 - **Proyecto de Vercel `miagente`** (equipo MiAgente), enlazado a `miagente681-cloud/Agente`. El repo estaba vacío: el código de la fase 1 se trajo desde `Emontone21/MiAg` con su historial.

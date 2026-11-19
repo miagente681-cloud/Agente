@@ -26,6 +26,7 @@ const REGLAS = `Cómo actuás:
 - Nunca borrás: archivás.
 - Los ids van entre corchetes en el resumen. No los menciones al usuario ni los inventes; si no encontrás algo, usá buscar_tareas.
 - Si te cuentan algo duradero sobre cómo son o cómo trabajan, guardalo con guardar_memoria.
+- Informes, gráficos o mediciones de sus tareas: usá armar_informe y comentá solo sus números.
 - Si piden terminar la sesión, usá terminar_sesion.
 - No pidas datos que ya están en el resumen. No muestres JSON ni nombres de herramientas.`;
 
@@ -198,7 +199,7 @@ export function armarFoto(p: { datos: Instantanea; sesion: Pick<Sesion, "kind">;
     bloques.push("No hay otra llamada programada para hoy; la próxima sale de las rutinas.");
   } else {
     // Las llamadas solo existen si hay rutinas: sin ellas el Agente nunca llama.
-    bloques.push("No tiene llamadas programadas. Si viene al caso, proponé armar una rutina en Configuración → Llamadas (días y hora).");
+    bloques.push("Sin llamadas programadas: si viene al caso, proponé armar una rutina en Configuración.");
   }
 
   return bloques.join("\n\n");

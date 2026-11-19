@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   Brain,
   CalendarDays,
+  ChartColumn,
   FolderKanban,
   KanbanSquare,
   MessageCircle,
@@ -22,6 +23,7 @@ export const SECCIONES: Item[] = [
   { href: "/calendario", nombre: "Calendario", icono: CalendarDays, movil: false },
   { href: "/proyectos", nombre: "Proyectos", icono: FolderKanban, movil: true },
   { href: "/chat", nombre: "Agente", icono: MessageCircle, movil: true },
+  { href: "/informes", nombre: "Informes", icono: ChartColumn, movil: false },
   { href: "/memoria", nombre: "Lo que sé de vos", icono: Brain, movil: false },
   { href: "/configuracion", nombre: "Configuración", icono: Settings, movil: true },
 ];

@@ -417,6 +417,73 @@ async function main() {
     afirmar(e.sessions[0].status === "completada" && e.sessions[0].providers_used.join() === "gemini,groq", "la sesión se cierra y guarda qué proveedores respondieron");
     afirmar(e.memories.length === 1 && e.project_log.some((x) => x.kind === "resumen_llamada"), "al cerrar quedan la memoria nueva y el resumen en la bitácora del proyecto");
 
+    console.log("Informes");
+    await pagina.goto(BASE + "/informes");
+    await pagina.getByText("Todavía no hay informes").waitFor();
+    ok("estado vacío de informes, con ejemplos de cómo pedirlos");
+    const primeroDelMes = fechaMvd(0).slice(0, 8) + "01";
+    // Sin atar el guion a un proveedor: más arriba Gemini devolvió un 429 y puede seguir salteado.
+    await guion([
+      { llamadas: [{ nombre: "armar_informe", argumentos: {
+        titulo: "Tareas hechas este mes", desde: primeroDelMes, hasta: fechaMvd(0),
+        bloques: ["numero hechas", "numero puntualidad", "barras hechas,creadas por semana", "reparto pendientes por proyecto", "lista hechas"],
+      } }] },
+      { siSistema: "lectura de un informe", texto: "**Venís bien**: cerraste lo que te propusiste. Lo flojo son las fechas: ponelas con un día de margen." },
+      { texto: "Te armé el informe del mes. Lo tenés en Informes." },
+    ]);
+    await pagina.goto(BASE + "/chat");
+    await pagina.getByLabel("Mensaje para el Agente").fill("Armame un informe en PDF de mis tareas hechas este mes");
+    await pagina.getByLabel("Mensaje para el Agente").press("Enter");
+    await pagina.getByText("Te armé el informe del mes.").waitFor();
+    await pagina.getByText("Informe «Tareas hechas este mes»").waitFor();
+    e = await estado();
+    const hechasEsperadas = e.tasks.filter((t) => t.status === "hecha" && !t.parent_id).length;
+    afirmar(e.informes.length === 1 && e.informes[0].datos.bloques[0].valor === hechasEsperadas && hechasEsperadas > 0,
+      `el Agente arma el informe y el número lo calcula la app (${hechasEsperadas} hechas)`);
+    afirmar(e.informes[0].analisis === "Venís bien: cerraste lo que te propusiste. Lo flojo son las fechas: ponelas con un día de margen.",
+      "la lectura del Agente se guarda sin formato");
+    const pedidoLectura = (await pedidosAlModelo()).find((x) => sistemaDe(x).includes("lectura de un informe"));
+    afirmar(JSON.stringify(pedidoLectura.cuerpo).includes(`Tareas hechas: ${hechasEsperadas}`) && !JSON.stringify(pedidoLectura.cuerpo).includes("Retirar materiales"),
+      "para la lectura el modelo recibe los números ya calculados, no las tareas");
+    await captura("27-chat-informe");
+    await pagina.getByRole("link", { name: "Ver informe" }).click();
+    await pagina.waitForURL(/\/informes\/[0-9a-f-]{36}$/);
+    await pagina.getByRole("heading", { name: "Tareas hechas este mes", level: 1 }).waitFor();
+    await pagina.getByText("Lectura del Agente").waitFor();
+    await pagina.getByRole("heading", { name: "Tareas hechas y creadas por semana" }).waitFor();
+    await pagina.getByRole("group", { name: "Tareas hechas y creadas por semana" }).waitFor();
+    await pagina.getByRole("heading", { name: /^Tareas hechas · / }).waitFor();
+    ok("el informe se abre desde el chat, con lectura, números, gráficos y lista");
+    // Al pasar por una franja del gráfico se leen sus valores; todo está también en la tabla.
+    const franja = pagina.getByRole("group", { name: "Tareas hechas y creadas por semana" }).locator("rect[role=img]").last();
+    await franja.hover();
+    const lectura = pagina.locator("section").filter({ has: pagina.getByRole("heading", { name: "Tareas hechas y creadas por semana" }) }).locator("[aria-live]");
+    afirmar(/Tareas hechas\s*\d+/.test((await lectura.innerText()).replace(/\n/g, " ")), `al pasar por el gráfico se leen los valores (${(await lectura.innerText()).replace(/\n/g, " ")})`);
+    await pagina.getByText("Ver como tabla").first().click();
+    await pagina.getByRole("columnheader", { name: "Tareas creadas" }).waitFor();
+    ok("cada gráfico tiene su tabla");
+    await captura("28-informe");
+    const bajada = pagina.waitForEvent("download");
+    await pagina.getByRole("button", { name: "Descargar PDF" }).click();
+    const pdf = await bajada;
+    const bytesPdf = require("node:fs").readFileSync(await pdf.path());
+    afirmar(pdf.suggestedFilename() === "tareas-hechas-este-mes.pdf" && bytesPdf.subarray(0, 5).toString() === "%PDF-" && bytesPdf.length > 1500,
+      `el informe se baja como PDF (${pdf.suggestedFilename()}, ${bytesPdf.length} bytes)`);
+    if (process.env.GUARDAR_PDF) require("node:fs").writeFileSync(process.env.GUARDAR_PDF, bytesPdf);
+    await pagina.goto(BASE + "/informes");
+    await pagina.getByRole("link", { name: /Tareas hechas este mes/ }).waitFor();
+    ok("el informe queda guardado en la sección Informes");
+    await captura("29-informes");
+    const informeId = e.informes[0].id;
+    // Se cierra esta conversación para que lo que sigue arranque en una sesión nueva.
+    await guion([{ siSistema: "archiva una sesión", texto: JSON.stringify({ resumen: "Pediste el informe de tus tareas del mes.", compromisos: [], memorias: [], bitacora: [] }) }]);
+    await pagina.goto(BASE + "/chat");
+    await pagina.getByText("Te armé el informe del mes.").waitFor();
+    await pagina.getByRole("button", { name: "Terminar" }).click();
+    await pagina.waitForURL(/\/sesiones\/[0-9a-f-]{36}$/);
+    await pagina.getByRole("link", { name: "Ver informe" }).waitFor();
+    ok("el resumen de la sesión también enlaza al informe");
+
     await pagina.goto(BASE + "/configuracion");
     await pagina.getByText("Cerebro del Agente").waitFor();
     await pagina.getByRole("button", { name: "Subir Groq" }).click();
@@ -800,7 +867,7 @@ async function main() {
     await movil.addCookies([{ ...cookieDeSesion(), url: BASE }]);
     const pm = await movil.newPage();
     pm.on("pageerror", (x) => errores.push("móvil: " + String(x)));
-    for (const [ruta, nombre] of [["/hoy", "07-movil-hoy"], ["/tablero", "08-movil-tablero"], ["/calendario", "09-movil-calendario"], ["/proyectos", "10-movil-proyectos"], ["/chat", "19-movil-chat"], ["/configuracion", "20-movil-configuracion"], ["/memoria", "21-movil-memoria"], ["/sesiones", "22-movil-sesiones"], ["/bienvenida", "23-movil-bienvenida"]]) {
+    for (const [ruta, nombre] of [["/hoy", "07-movil-hoy"], ["/tablero", "08-movil-tablero"], ["/calendario", "09-movil-calendario"], ["/proyectos", "10-movil-proyectos"], ["/chat", "19-movil-chat"], ["/configuracion", "20-movil-configuracion"], ["/memoria", "21-movil-memoria"], ["/sesiones", "22-movil-sesiones"], ["/bienvenida", "23-movil-bienvenida"], ["/informes", "30-movil-informes"], ["/informes/" + informeId, "31-movil-informe"]]) {
       await pm.goto(BASE + ruta);
       await pm.waitForLoadState("networkidle");
       const desborde = await pm.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -812,6 +879,12 @@ async function main() {
     await pm.getByLabel("Título").waitFor();
     await pm.screenshot({ path: path.join(capturas, "11-movil-detalle.png") });
     ok("el detalle de tarea abre en el celular");
+    await pm.goto(BASE + "/informes/" + informeId);
+    await pm.getByRole("button", { name: "Borrar" }).click();
+    await pm.getByRole("button", { name: "Sí, borrar" }).click();
+    await pm.waitForURL(/\/informes$/);
+    await pm.getByText("Todavía no hay informes").waitFor();
+    afirmar((await estado()).informes.length === 0, "un informe se borra desde su pantalla");
 
     console.log("Borrar todos mis datos");
     await pagina.goto(BASE + "/configuracion");
