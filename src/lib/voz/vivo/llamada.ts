@@ -347,6 +347,12 @@ export class LlamadaEnVivo implements Control {
     if (e.tipo === "dijiste") {
       // La persona habló: lo que venga después ya responde a esto, no es resto del turno cortado.
       this.descartando = false;
+      // El servicio ya dio el turno por terminado y todavía suena el final: no hay aviso de
+      // interrupción que esperar, se calla acá.
+      if ((!this.actual || this.actual.cerrado) && this.p.parlante.sonando) {
+        this.p.parlante.cortar();
+        if (this.estado.fase === "hablando") this.poner({ fase: "escuchando" });
+      }
       const x = this.intercambio();
       const id = this.lineaVos(x);
       x.textoVos += e.texto;

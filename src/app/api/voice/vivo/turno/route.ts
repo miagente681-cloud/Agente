@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
       .single();
     return (creada as { id: string } | null)?.id ?? null;
   };
-  const modelo = { provider: "gemini", model: configVivo(process.env, { aunqueNoEsteDisponible: true })?.modelo ?? null };
+  const modelo = { provider: "gemini", model: configVivo()?.modelo ?? null };
   const resultado: ResultadoTurnoVivo = { respuestas: [], cambios: [], terminar: false };
 
   if (cuerpo.usuario) await guardar({ role: "usuario", content: cuerpo.usuario });

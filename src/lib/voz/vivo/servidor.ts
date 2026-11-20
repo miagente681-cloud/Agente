@@ -17,26 +17,17 @@ import { VOCES_VIVO, VOZ_VIVO_POR_DEFECTO } from "./tipos";
 
 /** El nombre cambia seguido: se ajusta con GEMINI_MODEL_VIVO. */
 export const MODELO_VIVO_POR_DEFECTO = "gemini-3.8-live";
-/**
- * Todavía no se ofrece: falta comprobar el protocolo contra el servicio real.
- * Mientras esté en false, las llamadas siguen por turnos como hasta ahora.
- */
-const DISPONIBLE = false;
 
 export type ConfigVivo = { clave: string; base: string; modelo: string };
 
-export function configVivo(
-  env: Record<string, string | undefined> = process.env,
-  opciones: { aunqueNoEsteDisponible?: boolean } = {},
-): ConfigVivo | null {
+/** La llamada en vivo usa la clave de Gemini: sin ella no hay (y las llamadas van por turnos). */
+export function configVivo(env: Record<string, string | undefined> = process.env): ConfigVivo | null {
   const clave = (env.GEMINI_API_KEY ?? "").trim();
-  // La misma variable que usa el chat; en las pruebas apunta a un servicio de mentira.
-  const otraBase = (env.GEMINI_BASE_URL ?? "").trim();
-  // Contra un servicio de mentira se puede probar siempre.
-  if (!clave || (!DISPONIBLE && !otraBase && !opciones.aunqueNoEsteDisponible)) return null;
+  if (!clave) return null;
   return {
     clave,
-    base: (otraBase || "https://generativelanguage.googleapis.com").replace(/\/$/, ""),
+    // La misma variable que usa el chat; en las pruebas apunta a un servicio de mentira.
+    base: ((env.GEMINI_BASE_URL ?? "").trim() || "https://generativelanguage.googleapis.com").replace(/\/$/, ""),
     modelo: (env.GEMINI_MODEL_VIVO ?? "").trim() || MODELO_VIVO_POR_DEFECTO,
   };
 }
@@ -69,7 +60,7 @@ export function transcripcionPrevia(previos: Previo[]): string {
     });
   if (!lineas.length) return "";
   return (
-    "Esta llamada ya venía en curso (se renovó la conexión). Lo último que se habló:\n" +
+    "Esta conversación ya venía en curso. Lo último que se habló:\n" +
     lineas.join("\n") +
     "\nSeguí desde ahí: no vuelvas a saludar ni repitas lo ya dicho. Esperá a que la persona hable."
   );

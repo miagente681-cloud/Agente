@@ -302,11 +302,13 @@ La llamada en vivo se prueba en ese navegador con un micrófono de mentira (el d
 - **Registros:** Vercel (plan Hobby) guarda solo la última hora. El servidor escribe líneas `[agente]` cuando un proveedor falla, `[claude]` por cada pedido (tokens y costo, sin datos de la persona) `[push]` cuando un aviso no se pudo entregar y `[vivo]` con lo que pasa en cada llamada en vivo (conexión, cortes, paso a turnos; sin nada de lo conversado).
 - **Costo:** todo es gratuito salvo Claude. No activar facturación en ningún otro proveedor.
 
-## 14. Estado y pendientes (12/11/2026)
+## 14. Estado y pendientes (20/11/2026)
 
-Funciona en producción: panel, ingreso con contraseña, chat con Gemini y Groq, chat de voz con la voz del navegador (también en iPhone), programador corriendo cada minuto, claves de push cargadas.
+Funciona en producción: panel, ingreso con contraseña, chat con Gemini y Groq, chat de voz con la voz del navegador (también en iPhone), programador corriendo cada minuto, claves de push cargadas. La llamada en vivo quedó habilitada el 20/11 y comprobada contra el servicio real desde el servidor (conexión, voz, herramientas e interrupción; detalle en `DECISIONES.md`).
 
 Sin confirmar con servicios reales:
+
+- **La llamada en vivo en un teléfono:** micrófono, parlante y eco de verdad. Lo que pase queda en los registros `[vivo]` (Vercel guarda la última hora).
 
 - Claude en producción (la lista de correos permitidos se cargó; falta que la persona pruebe «Probar conexión»).
 - Una notificación push real en un teléfono, recordatorios incluidos. Desde el 17/11 se puede comprobar con «Recibir una llamada de prueba» en Configuración, y el resultado de cada envío queda en `push_subscriptions`.

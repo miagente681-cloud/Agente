@@ -164,9 +164,11 @@ describe("ajustes y token de la llamada en vivo", () => {
 
   it("sin la clave de Gemini no hay llamada en vivo", () => {
     expect(configVivo({})).toBeNull();
-    expect(configVivo({ GEMINI_API_KEY: "  " }, { aunqueNoEsteDisponible: true })).toBeNull();
-    expect(configVivo({ GEMINI_API_KEY: "k" }, { aunqueNoEsteDisponible: true })).toMatchObject({
+    expect(configVivo({ GEMINI_API_KEY: "  " })).toBeNull();
+    expect(configVivo({ GEMINI_API_KEY: "k" })).toEqual({
+      clave: "k",
       base: "https://generativelanguage.googleapis.com",
+      modelo: "gemini-3.8-live",
     });
   });
 });
@@ -299,6 +301,17 @@ describe("control de la llamada en vivo", () => {
     expect(t.lineas()).toEqual(["agente: Te decía que lo del patio", "vos: Pará, eso ya lo hice.", "agente: Perfecto, lo marco."]);
     await t.c.pendientes();
     expect(t.guardados).toEqual([{ agente: "Te decía que lo del patio" }, { usuario: "Pará, eso ya lo hice.", agente: "Perfecto, lo marco." }]);
+  });
+
+  it("si hablo cuando el servicio ya cerró el turno pero todavía suena el final, también se calla", async () => {
+    const t = armar();
+    await t.conectar();
+    t.llega(audio, dice("Y eso es todo por hoy."), finTurno);
+    expect(t.c.estado.fase).toBe("hablando");
+    t.llega(dijiste("Pará."));
+    expect(t.parlante.cortes).toBe(1);
+    expect(t.c.estado.fase).toBe("escuchando");
+    expect(t.lineas()).toEqual(["agente: Y eso es todo por hoy.", "vos: Pará."]);
   });
 
   it("lo que dije queda antes de la respuesta aunque su transcripción llegue tarde", async () => {
