@@ -18,6 +18,10 @@ export const LIMITES = {
   cerrar: { porMinuto: 10, porDia: 150 },
   voz_token: { porMinuto: 6, porDia: 60 },
   voz_uso: { porMinuto: 10, porDia: 2000 },
+  // Llamada en vivo: una conexión al atender y una más cada tantos minutos (el servicio las renueva).
+  voz_vivo: { porMinuto: 6, porDia: 120 },
+  // Cada ida y vuelta de una llamada en vivo se guarda aparte: son más por minuto que en un chat escrito.
+  vivo_turno: { porMinuto: 40, porDia: 2000 },
   push_probar: { porMinuto: 3, porDia: 20 },
   // Cada llamada de prueba que se atiende usa el modelo de las llamadas.
   llamada_prueba: { porMinuto: 1, porDia: 5 },

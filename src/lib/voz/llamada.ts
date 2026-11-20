@@ -31,16 +31,31 @@ export type EstadoLlamada = {
   sordo: boolean;
   /** El micrófono oye bastante al propio Agente: para interrumpirlo hay que hablar fuerte. */
   ecoFuerte: boolean;
-  motor: ProveedorVoz["id"];
+  /** Quién pone la voz: un proveedor por turnos, o «vivo» (audio continuo, ver vivo/llamada.ts). */
+  motor: ProveedorVoz["id"] | "vivo";
   aviso: string | null;
 };
+
+/** Lo que la pantalla de llamada usa de un control, sea por turnos o en vivo. */
+export interface Control {
+  estado: EstadoLlamada;
+  escribir(texto: string): void;
+  interrumpir(): void;
+  silenciar(silenciado: boolean): void;
+  ponerNivel(nivel: () => number | null): void;
+  revisarVolumen(ahora?: number): number | null;
+  avisar(mensaje: string): void;
+  quitarAviso(): void;
+  segundosNuevos(): number;
+  cerrar(): void;
+}
 
 /** Mediciones seguidas sin poder medir (más o menos un segundo) para avisar que no se oye. */
 const MEDICIONES_PARA_SORDO = 25;
 
 type PedirTurno = (pedido: { texto?: string; inicio?: boolean }, senal: AbortSignal) => AsyncGenerator<EventoCliente>;
 
-export class ControlLlamada {
+export class ControlLlamada implements Control {
   estado: EstadoLlamada;
   private voz: ProveedorVoz;
   /** Cambia con cada interrupción: lo que quedó en vuelo de antes se descarta. */
@@ -64,12 +79,16 @@ export class ControlLlamada {
       silenciado?: boolean;
       /** El Agente terminó la sesión a pedido: se llama cuando terminó de despedirse. */
       alTerminar?: () => void;
+      /** Lo ya conversado, cuando este control sigue una llamada que venía en vivo. */
+      lineas?: Linea[];
     },
   ) {
     this.voz = p.voz;
     this.detector = new DetectorDeVoz(p.sensibilidad ?? "normal");
+    const lineas = p.lineas ?? [];
+    this.n = lineas.reduce((mayor, l) => Math.max(mayor, l.id + 1), 0);
     this.estado = {
-      fase: "conectando", lineas: [], parcial: "", silenciado: Boolean(p.silenciado), sordo: false, ecoFuerte: false, motor: p.voz.id, aviso: null,
+      fase: "conectando", lineas, parcial: "", silenciado: Boolean(p.silenciado), sordo: false, ecoFuerte: false, motor: p.voz.id, aviso: null,
     };
   }
 

@@ -13,9 +13,16 @@ function origenDe(url: string): string | null {
   }
 }
 
-export function politicaDeContenido(p: { nonce: string; supabaseUrl: string; desarrollo?: boolean }): string {
+export function politicaDeContenido(p: {
+  nonce: string;
+  supabaseUrl: string;
+  desarrollo?: boolean;
+  /** Si Gemini apunta a otro lado (GEMINI_BASE_URL, en las pruebas), la llamada en vivo se conecta ahí. */
+  geminiUrl?: string;
+}): string {
   const supabase = origenDe(p.supabaseUrl);
   const supabaseWs = supabase ? supabase.replace(/^http/, "ws") : null;
+  const gemini = origenDe(p.geminiUrl?.trim() || "https://generativelanguage.googleapis.com");
   const conectar = [
     "'self'",
     supabase,
@@ -25,6 +32,8 @@ export function politicaDeContenido(p: { nonce: string; supabaseUrl: string; des
     "wss://*.tts.speech.microsoft.com",
     "https://*.stt.speech.microsoft.com",
     "https://*.tts.speech.microsoft.com",
+    // Llamada en vivo (Gemini Live): WebSocket directo desde el navegador, con un token de un solo uso.
+    gemini ? gemini.replace(/^http/, "ws") : null,
   ].filter(Boolean);
   const directivas = [
     "default-src 'self'",

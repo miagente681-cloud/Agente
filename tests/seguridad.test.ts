@@ -236,6 +236,11 @@ describe("cabeceras y origen", () => {
     expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
     expect(csp).not.toContain("unsafe-eval");
     expect(csp).toContain("connect-src 'self' https://ref.supabase.co wss://ref.supabase.co wss://*.stt.speech.microsoft.com");
+    // La llamada en vivo se conecta por WebSocket solo al servicio de Gemini (o a donde apunte en las pruebas).
+    expect(csp).toMatch(/connect-src [^;]* wss:\/\/generativelanguage\.googleapis\.com(;|$)/);
+    expect(politicaDeContenido({ nonce: "abc", supabaseUrl: "https://ref.supabase.co", geminiUrl: "http://127.0.0.1:54322" })).toMatch(
+      /connect-src [^;]* ws:\/\/127\.0\.0\.1:54322(;|$)/,
+    );
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("object-src 'none'");
     expect(POLITICA_DE_PERMISOS).toContain("microphone=(self)");

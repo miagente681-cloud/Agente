@@ -34,7 +34,7 @@ Es multiusuario: cada persona ve solo lo suyo. Todos comparten las claves del de
 | Base e ingreso | Supabase: Postgres con RLS, Auth (contraseña o código por correo), pg_cron + pg_net + Vault |
 | Hosting | Vercel (plan Hobby), proyecto `miagente`. Producción sale de la rama `claude/pensive-galileo-w7i9nk` |
 | Modelos | Claude (pago, con tope) → Gemini → Groq → Ollama (opcional). Orden configurable por persona |
-| Voz | Azure Speech (opcional) o la Web Speech API del navegador |
+| Voz | Llamada en vivo con la API en vivo de Gemini (audio continuo). De respaldo, por turnos: Azure Speech (opcional) o la Web Speech API del navegador |
 | Push | Web Push con claves VAPID (paquete `web-push`) |
 | Pruebas | Vitest + PGlite (Postgres en memoria), Playwright con servicios de mentira |
 
@@ -69,7 +69,8 @@ src/
       claude/               Precios, modelos por uso, presupuesto y tope
     datos/                  Almacén del panel en el navegador, fechas, orden, perfil
     informes/               Informes: medidas y bloques, cálculo, geometría de gráficos, PDF (ver sección 8 bis)
-    voz/                    Llamada, Azure, voz del navegador, cupo, desbloqueo de audio en iPhone
+    voz/                    Llamada por turnos, Azure, voz del navegador, cupo, desbloqueo de audio en iPhone
+      vivo/                 Llamada en vivo: protocolo, audio, conexión, control y lado del servidor (ver sección 7)
     programacion/           horarios.ts (lógica pura) y tick.ts (lo que corre cada minuto)
     push/                   Suscripción (navegador), envío (servidor), lista de destinos válidos
     seguridad/              Correos permitidos, límite de frecuencia, cabeceras
@@ -148,16 +149,37 @@ Claude es el único proveedor pago. Las reglas están en `claude/` y en `segurid
 
 ## 7. Voz
 
-`src/lib/voz/` y la pantalla `app/(app)/llamada/[id]/llamada.tsx`.
+`src/lib/voz/` y la pantalla `app/(app)/llamada/[id]/llamada.tsx`. Hay dos motores y una sola pantalla: los dos cumplen la interfaz `Control` (`llamada.ts`) y muestran el mismo `EstadoLlamada`.
+
+### Llamada en vivo (`voz/vivo/`)
+
+Es la que se usa cuando hay clave de Gemini. Audio continuo en los dos sentidos con la API en vivo de Gemini (Live API): el micrófono viaja todo el tiempo y la respuesta llega como audio. Quién habla lo decide el servicio escuchando: si la persona habla encima, avisa (`interrupted`) y la pantalla calla el parlante en el acto. No usa la voz ni el dictado del sistema, que en iPhone no conviven con el micrófono de la página (ver `DECISIONES.md`).
+
+**Durante una llamada en vivo el cerebro es el modelo en vivo de Gemini**, no Claude ni el modelo de texto. Las herramientas, el registro de cambios, «Deshacer» y el cierre de la sesión son los de siempre.
+
+- **Camino:** la pantalla pide `POST /api/voice/vivo` → el servidor arma las instrucciones (`sistemaVivo`: las de voz, las propias de la llamada en vivo, la foto del estado y lo último hablado), las herramientas y la voz, y le pide a Google un token de un solo uso con todo eso fijado → el navegador abre el WebSocket directo con Google (Vercel no puede sostener un WebSocket) → manda audio y recibe audio. La clave de Gemini no sale del servidor.
+- `protocolo.ts` (lógica pura): los mensajes de ida y de vuelta, el PCM y la bajada del micrófono a 16 kHz. Sin SDK.
+- `servidor.ts`: ajustes de la sesión (`ajustesVivo`), token (`pedirTokenVivo`) e instrucciones. El modelo se cambia con `GEMINI_MODEL_VIVO`.
+- `llamada.ts` → `LlamadaEnVivo`: el control. Recibe el parlante, la conexión y las funciones que hablan con el servidor, así que se prueba con todo de mentira (`tests/vivo.test.ts`).
+- `audio.ts`: la captura del micrófono (AudioWorklet en `public/audio/captura.js`; si el navegador no lo carga, el procesador clásico) y el `Parlante` (cola de trozos, `cortar()`). `conexion.ts`: el WebSocket.
+- **Guardar y aplicar:** lo hablado no pasa por el servidor. Al final de cada intercambio la pantalla manda a `POST /api/voice/vivo/turno` lo que el servicio transcribió de cada lado, y ahí mismo se ejecutan las herramientas que pide el Agente (`ejecutarHerramienta`, con la sesión de la persona). Así la transcripción, el resumen y las memorias funcionan igual que en el chat.
+- **Renovación:** el servicio corta cada conexión a los pocos minutos y avisa antes (`goAway`). La pantalla abre otra cuando el Agente termina de hablar; el servidor le pasa lo último conversado para que siga sin volver a saludar.
+- **Respaldo:** si no arranca, o se cae y no vuelve en tres intentos, la pantalla sigue por turnos sin cortar la llamada. La persona puede elegir «por turnos» en Configuración → Voz (queda en el dispositivo), y ahí también elige la voz.
+- **Diagnóstico:** como la conexión es entre el navegador y Google, la pantalla avisa lo que pasa a `POST /api/voice/vivo/aviso` (se conectó y cómo captura el micrófono, se cortó y con qué código, pasó a turnos). Queda en los registros del servidor como `[vivo]`.
+
+### Por turnos (el motor original, ahora el respaldo)
 
 - `llamada.ts` → `ControlLlamada`: la máquina de estados (escuchando → pensando → hablando). No sabe de React ni de Azure.
 - `tipos.ts` → `ProveedorVoz`: la interfaz. Dos implementaciones: `azure.ts` y `navegador.ts`.
 - `oraciones.ts`: corta el texto que llega en streaming en frases para decirlas a medida que llegan.
-- `desbloqueo.ts`: en iPhone el audio solo se habilita dentro de un toque. Hay que llamar a `desbloquearAudio()` de forma sincrónica en el manejador del toque, antes de cualquier `await`.
-- `deteccion.ts` → `DetectorDeVoz`: decide, mirando solo el volumen del micrófono, que la persona empezó a hablar encima del Agente (para interrumpirlo sin tocar nada). Lógica pura: tolera las caídas entre sílabas, mide cuánto del propio Agente entra por el micrófono para no cortarse solo, y tiene sensibilidad regulable (se guarda en el dispositivo).
+- `deteccion.ts` → `DetectorDeVoz`: decide, mirando solo el volumen del micrófono, que la persona empezó a hablar encima del Agente (para interrumpirlo sin tocar nada). Lógica pura: tolera las caídas entre sílabas, mide cuánto del propio Agente entra por el micrófono para no cortarse solo, y tiene sensibilidad regulable (se guarda en el dispositivo). **En iPhone con la voz del navegador no llega a funcionar** (por eso existe la llamada en vivo).
 - `volumen.ts` → `crearMonitor()`: mide ese volumen con el contexto de audio de la página (el que se habilita con cada toque). Devuelve `null` cuando no puede medir (audio suspendido, micrófono silenciado por el sistema): la pantalla lo avisa y deja el botón «Interrumpir».
-- La pantalla mide cada 40 ms (`llamada.tsx` → `medir()`), mueve el aro que muestra que el micrófono oye y, si el sistema cortó el micrófono, lo vuelve a pedir.
 - Azure: el navegador pide un token corto a `/api/voice/token`. El cupo mensual es global para el despliegue y cada token descuenta un mínimo.
+
+### Común a los dos
+
+- `desbloqueo.ts`: en iPhone el audio solo se habilita dentro de un toque. Hay que llamar a `desbloquearAudio()` de forma sincrónica en el manejador del toque, antes de cualquier `await`. El contexto de audio es uno solo para toda la página (`contextoDeAudio()`).
+- La pantalla mide cada 40 ms (`llamada.tsx` → `medir()`), mueve el aro que muestra que el micrófono oye y, si el sistema cortó el micrófono, lo vuelve a pedir. Mientras dura la llamada pide que la pantalla del teléfono no se apague.
 
 ## 8. Programador: llamadas y recordatorios
 
@@ -200,6 +222,9 @@ Todos validan la sesión con `usuarioActual()` (JWT verificado). Los que gastan 
 | `GET /api/claude/gasto` | Gasto del mes para el panel |
 | `POST /api/voice/token` | Token corto de Azure Speech |
 | `POST /api/voice/uso` | Suma segundos de reconocimiento al cupo |
+| `POST /api/voice/vivo` | Llamada en vivo: token de un solo uso de Gemini con las instrucciones y las herramientas fijadas |
+| `POST /api/voice/vivo/turno` | Llamada en vivo: guarda lo hablado y ejecuta las herramientas que pide el Agente |
+| `POST /api/voice/vivo/aviso` | Llamada en vivo: deja en los registros lo que pasó con la conexión (diagnóstico) |
 | `POST /api/push/probar` | Notificación de prueba |
 | `POST /api/push/llamada-prueba` | Crea una llamada para ahora y la avisa por push (para probar todo el circuito en el teléfono) |
 | `GET /api/estado` | Qué funciones tiene el despliegue (el detalle, solo para quien administra) |
@@ -241,7 +266,9 @@ npm run typecheck
 
 Antes de subir un cambio tienen que pasar las cuatro cosas. Los servicios de mentira no validan RLS ni restricciones de la base: si se agrega una tabla o una función de la base, hay que sumarla en `supabase-falso.cjs` y probar las reglas en `esquema.test.ts`.
 
-**Lo que las pruebas no cubren:** los modelos reales, Azure real, una notificación push real en un teléfono y el correo de ingreso. Eso se prueba a mano en producción.
+La llamada en vivo se prueba en ese navegador con un micrófono de mentira (el del propio Chromium) y un servicio de voz de mentira que habla el protocolo real por WebSocket (`modelos-falsos.cjs`): la prueba le dicta qué mandar (`POST /__vivo`) y mira qué recibió.
+
+**Lo que las pruebas no cubren:** los modelos reales, Azure real, la llamada en vivo en un teléfono (micrófono, parlante y eco de verdad), una notificación push real en un teléfono y el correo de ingreso. Eso se prueba a mano en producción.
 
 ## 12. Recetas: dónde tocar
 
@@ -263,14 +290,16 @@ Antes de subir un cambio tienen que pasar las cuatro cosas. Los servicios de men
 | Agregar un endpoint | `app/api/.../route.ts`: validar con `usuarioActual()`, y si gasta, `frenarSiHaceFalta()` con una clave nueva en `seguridad/frecuencia.ts` |
 | Sumar una integración con clave | Variable en `.env.example` y `CREDENCIALES.md`, entrada en `lib/integraciones.ts`, y que la función degrade si falta |
 | Cambiar cuándo se interrumpe al Agente al hablarle encima | `lib/voz/deteccion.ts` (umbrales, ventana, eco) y sus pruebas en `tests/deteccion.test.ts`. No se puede probar sin un micrófono real: después, probar en el teléfono |
-| Cambiar la voz | `lib/voz/` (`azure.ts` o `navegador.ts`); la lista de voces está en `tipos.ts` |
+| Cambiar la voz | En vivo: la lista está en `lib/voz/vivo/tipos.ts` y se manda en `servidor.ts` → `ajustesVivo()`. Por turnos: `lib/voz/` (`azure.ts` o `navegador.ts`); la lista está en `tipos.ts` |
+| Cambiar el modelo o las instrucciones de la llamada en vivo | Modelo: variable `GEMINI_MODEL_VIVO`. Instrucciones y ajustes: `lib/voz/vivo/servidor.ts`. El formato de los mensajes: `protocolo.ts` |
+| Cambiar cómo reacciona la llamada en vivo (interrupción, reconexión, guardado) | `lib/voz/vivo/llamada.ts` y sus pruebas en `tests/vivo.test.ts`. Después, probar en el teléfono y mirar los registros `[vivo]` |
 
 ## 13. Despliegue y operación
 
 - **Desplegar:** un `git push` a `claude/pensive-galileo-w7i9nk` despliega producción en Vercel. No hay entorno de pruebas separado: todo push va a la app en uso. La rama `main` existe pero está atrasada.
 - **Variables:** una variable nueva o cambiada en Vercel recién se aplica al volver a desplegar.
 - **Migraciones:** se aplican a mano en Supabase (SQL Editor o la API de administración), en orden. Hasta hoy están aplicadas de la 0001 a la 0009.
-- **Registros:** Vercel (plan Hobby) guarda solo la última hora. El servidor escribe líneas `[agente]` cuando un proveedor falla, `[claude]` por cada pedido (tokens y costo, sin datos de la persona) y `[push]` cuando un aviso no se pudo entregar.
+- **Registros:** Vercel (plan Hobby) guarda solo la última hora. El servidor escribe líneas `[agente]` cuando un proveedor falla, `[claude]` por cada pedido (tokens y costo, sin datos de la persona) `[push]` cuando un aviso no se pudo entregar y `[vivo]` con lo que pasa en cada llamada en vivo (conexión, cortes, paso a turnos; sin nada de lo conversado).
 - **Costo:** todo es gratuito salvo Claude. No activar facturación en ningún otro proveedor.
 
 ## 14. Estado y pendientes (12/11/2026)

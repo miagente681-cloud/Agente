@@ -21,10 +21,27 @@ export type PasoModelo = {
   llamadas?: { nombre: string; argumentos: unknown }[];
   cortar?: boolean;
 };
+/** Lo que recibió cada conexión de llamada en vivo de mentira. */
+export type ConexionViva = {
+  /** Los ajustes que quedaron fijados en el token. */
+  fijado: Fila;
+  /** Los ajustes que mandó quien se conectó. */
+  ajustes: Fila | null;
+  audio: number;
+  bytesDeAudio: number;
+  formatoDeAudio?: string;
+  textos: string[];
+  finesDeAudio: number;
+  respuestas: Fila[];
+  otros: Fila[];
+  abierta: boolean;
+};
 export type ServidorModelos = Server & {
-  guion: (pasos: PasoModelo[]) => void;
+  guion: (pasos: (PasoModelo & { mudo?: boolean })[]) => void;
   pedidos: () => { proveedor: string; cuerpo: Fila; cabeceras: Fila }[];
   reiniciar: () => void;
+  vivo: () => { conexiones: ConexionViva[] };
+  enviarVivo: (p: { enviar?: unknown[]; cerrar?: number; conexion?: number }) => boolean;
 };
 
 export const USUARIO: { id: string } = supabaseFalso.USUARIO;

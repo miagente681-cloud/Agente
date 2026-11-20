@@ -45,6 +45,8 @@ const ENTORNO_EXTRA = {
   SUPABASE_SERVICE_ROLE_KEY: "servicio-falsa",
   CRON_SECRET: "secreto-de-prueba",
   CLAUDE_USUARIOS_PERMITIDOS: "prueba@ejemplo.com",
+  // La recorrida abre varias llamadas en vivo seguidas: que el límite por minuto no la frene.
+  LIMITE_VOZ_VIVO: "40/400",
 };
 const tick = (secreto) =>
   fetch(`${BASE}/api/cron/tick`, { method: "POST", headers: secreto ? { Authorization: `Bearer ${secreto}` } : {} });
@@ -104,7 +106,8 @@ async function main() {
     },
     stdio: "ignore",
   });
-  const navegador = await chromium.launch();
+  // Micrófono de mentira del propio navegador (un tono), para la llamada en vivo.
+  const navegador = await chromium.launch({ args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"] });
   try {
     await esperarServidor();
     const contexto = await navegador.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 1 });
@@ -673,6 +676,197 @@ async function main() {
     afirmar(await conVoz.getByLabel("Interrumpir al Agente hablando").inputValue() === "baja", "al volver, la sensibilidad elegida sigue ahí");
     await conVoz.getByLabel("Interrumpir al Agente hablando").selectOption("normal");
     await conVoz.close();
+
+    console.log("Llamada en vivo (servicio de voz de mentira, micrófono de mentira del navegador)");
+    const vivo = async () => (await (await fetch(`${MODELOS}/__vivo`)).json()).conexiones;
+    const servicio = (...enviar) => fetch(`${MODELOS}/__vivo`, { method: "POST", body: JSON.stringify({ enviar }) });
+    const hasta = async (condicion, texto, ms = 15000) => {
+      const limite = Date.now() + ms;
+      for (;;) {
+        const valor = await condicion();
+        if (valor) return valor;
+        if (Date.now() > limite) throw new Error("FALLÓ (no llegó a pasar): " + texto);
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    };
+    // La voz del Agente como la manda el servicio: PCM de 16 bits a 24 kHz, en base64.
+    const voz = (ms) => {
+      const bytes = Buffer.alloc(24 * ms * 2);
+      for (let i = 0; i < 24 * ms; i++) bytes.writeInt16LE(Math.round(6000 * Math.sin((2 * Math.PI * 330 * i) / 24000)), i * 2);
+      return { serverContent: { modelTurn: { parts: [{ inlineData: { mimeType: "audio/pcm;rate=24000", data: bytes.toString("base64") } }] } } };
+    };
+    const dice = (text) => ({ serverContent: { outputTranscription: { text } } });
+    const dijiste = (text) => ({ serverContent: { inputTranscription: { text } } });
+    const finTurno = { serverContent: { turnComplete: true } };
+    const pedidosVivo = async () => (await pedidosAlModelo()).filter((x) => x.proveedor === "vivo");
+
+    const enVivo = await (await sembrar("sessions", { kind: "llamada_programada", channel: "voz", status: "notificada", scheduled_at: new Date().toISOString(), notified_at: new Date().toISOString(), focus: "Repaso en vivo", target_minutes: 5 })).json();
+    const contextoVivo = await navegador.newContext({ viewport: { width: 420, height: 860 }, deviceScaleFactor: 1, permissions: ["microphone"] });
+    await contextoVivo.addCookies([{ ...cookieDeSesion(), url: BASE }]);
+    const pv = await contextoVivo.newPage();
+    pv.on("pageerror", (x) => errores.push("en vivo: " + String(x)));
+    pv.on("console", (m) => m.type() === "error" && errores.push("en vivo: " + m.text()));
+    const avisos = [];
+    pv.on("request", (r) => r.url().endsWith("/api/voice/vivo/aviso") && avisos.push(JSON.parse(r.postData())));
+    const antesDeAtender = (await pedidosAlModelo()).length;
+    await pv.goto(`${BASE}/llamada/${enVivo.id}`);
+    await pv.getByRole("button", { name: "Atender" }).click();
+    let c0 = await hasta(async () => (await vivo()).find((c) => c.ajustes), "la pantalla se conecta al servicio de voz");
+    await pv.getByText("Voz: en vivo").waitFor();
+    const instrucciones = c0.ajustes.systemInstruction.parts[0].text;
+    afirmar(instrucciones.includes("LLAMADA EN VIVO") && instrucciones.includes("LLAMADA PROGRAMADA") && instrucciones.includes("Repaso en vivo") && instrucciones.includes("Barrer el patio"),
+      "al atender, la llamada en vivo recibe el guion de la llamada, el foco y el estado de las tareas");
+    afirmar(c0.ajustes.tools[0].functionDeclarations.some((f) => f.name === "actualizar_tarea") && c0.ajustes.generationConfig.responseModalities[0] === "AUDIO",
+      "el servicio de voz recibe las herramientas del Agente y responde con audio");
+    const tokenVivo = (await pedidosVivo()).at(-1);
+    afirmar(JSON.stringify(c0.fijado) === JSON.stringify(c0.ajustes) && tokenVivo.cuerpo.uses === 1 && tokenVivo.cabeceras["x-goog-api-key"] === "falsa",
+      "la conexión usa un token de un solo uso con los ajustes fijados; la clave queda en el servidor");
+    afirmar(!JSON.stringify(await pv.evaluate(() => performance.getEntriesByType("resource").map((r) => r.name))).includes("falsa"),
+      "la clave de Gemini no aparece en ningún pedido del navegador");
+    c0 = await hasta(async () => (await vivo())[0].textos.length && (await vivo())[0], "el Agente recibe la orden de abrir la llamada");
+    afirmar(c0.textos[0] === "(Empieza la sesión. Abrí vos la conversación.)" && (await pedidosAlModelo()).length === antesDeAtender + 1,
+      "abre el Agente, y la conversación no pasa por el modelo de texto");
+    c0 = await hasta(async () => (await vivo())[0].audio > 5 && (await vivo())[0], "el micrófono viaja al servicio");
+    const porTrozo = c0.bytesDeAudio / c0.audio;
+    afirmar(c0.formatoDeAudio === "audio/pcm;rate=16000" && porTrozo > 400 && porTrozo < 4000, `el micrófono viaja en trozos cortos de PCM a 16 kHz (${Math.round(porTrozo)} bytes cada uno)`);
+    await hasta(() => avisos.find((a) => a.evento === "conectada"), "la pantalla avisa al servidor que se conectó");
+    afirmar(/micrófono por (worklet|procesador) a \d+ Hz/.test(avisos.find((a) => a.evento === "conectada").detalle), `queda registrado cómo se captura el micrófono (${avisos.find((a) => a.evento === "conectada").detalle})`);
+
+    await servicio(voz(1200), dice("Hola. ¿Cómo venís "), dice("con lo del patio?"));
+    await pv.getByText("Hola. ¿Cómo venís con lo del patio?").waitFor();
+    await pv.getByText("Hablando").waitFor();
+    await pv.getByText("Hablá cuando quieras: me callo al instante").waitFor();
+    const mientrasHabla = (await vivo())[0].audio;
+    await hasta(async () => (await vivo())[0].audio > mientrasHabla + 5, "mientras el Agente habla, el micrófono sigue viajando al servicio");
+    ok("mientras el Agente habla, el micrófono sigue abierto y viajando (se lo puede interrumpir hablando)");
+    await captura("16b-llamada-en-vivo", pv);
+    await servicio(finTurno);
+    await pv.getByText("Te escucho").waitFor();
+    ok("cuando el Agente termina de hablar, la pantalla vuelve a «Te escucho» sola");
+
+    // Hablarle encima: quedan cuatro segundos de voz en cola y el servicio avisa la interrupción.
+    await servicio(voz(4000), dice("Te cuento todo lo que tenés pendiente esta semana"));
+    await pv.getByText("Hablando").waitFor();
+    const alInterrumpir = Date.now();
+    await servicio({ serverContent: { interrupted: true } }, finTurno);
+    await pv.getByText("Te escucho").waitFor();
+    afirmar(Date.now() - alInterrumpir < 1500, `si le hablo encima, el Agente se calla en el acto aunque le quedara audio por decir (${Date.now() - alInterrumpir} ms)`);
+
+    // Lo que digo, con una herramienta: se aplica en el servidor y el resultado vuelve al servicio.
+    await servicio(dijiste("Lo del patio "), dijiste("ya lo barrí."), { toolCall: { functionCalls: [{ id: "fn-1", name: "actualizar_tarea", args: { tarea_id: corto(paraLlamada.id), estado: "hecha" } }] } });
+    c0 = await hasta(async () => (await vivo())[0].respuestas.length && (await vivo())[0], "el resultado de la herramienta vuelve al servicio de voz");
+    afirmar(c0.respuestas[0].id === "fn-1" && c0.respuestas[0].name === "actualizar_tarea" && !c0.respuestas[0].response.resultado.error, "el servicio recibe el resultado con el id de la llamada");
+    afirmar((await estado()).tasks.find((t) => t.id === paraLlamada.id).status === "hecha", "lo que digo en la llamada en vivo actualiza el panel");
+    await pv.getByText("Lo del patio ya lo barrí.").waitFor();
+    await pv.getByText(/«Barrer el patio»: .*hecha/i).waitFor();
+    ok("veo lo que dije y la tarjeta del cambio (con Deshacer) en la llamada");
+    await servicio(voz(300), dice("Listo, la marqué como hecha."), finTurno);
+    await pv.getByText("Listo, la marqué como hecha.").waitFor();
+    await pv.getByText("Te escucho").waitFor();
+    const guardados = await hasta(async () => {
+      const m = (await estado()).messages.filter((x) => x.session_id === enVivo.id).sort((a, b) => a.created_at.localeCompare(b.created_at));
+      return m.length >= 7 && m;
+    }, "lo hablado queda guardado");
+    afirmar(guardados.map((m) => m.role).join(",") === "sistema,agente,agente,usuario,agente,herramienta,agente"
+      && guardados[1].content === "Hola. ¿Cómo venís con lo del patio?" && guardados[3].content === "Lo del patio ya lo barrí."
+      && guardados[4].tool_calls[0].nombre === "actualizar_tarea" && guardados[4].provider === "gemini" && guardados[6].content === "Listo, la marqué como hecha.",
+      "la transcripción queda guardada en orden: lo que dije, la herramienta, su resultado y la respuesta");
+
+    // También se le puede escribir.
+    await pv.getByLabel("Escribirle al Agente").fill("Anotá comprar pintura");
+    await pv.getByLabel("Escribirle al Agente").press("Enter");
+    await hasta(async () => (await vivo())[0].textos.includes("Anotá comprar pintura"), "lo que escribo llega al servicio de voz");
+    await servicio(voz(200), dice("Anotado."), finTurno);
+    await pv.getByText("Anotado.").waitFor();
+    await pv.getByText("Te escucho").waitFor();
+    ok("escribo en la llamada en vivo y el Agente responde hablando");
+
+    // Silenciar deja de mandar el micrófono.
+    await pv.getByRole("button", { name: "Silenciar" }).click();
+    await pv.getByText("Micrófono silenciado").waitFor();
+    await new Promise((r) => setTimeout(r, 300));
+    const silenciado = (await vivo())[0];
+    await new Promise((r) => setTimeout(r, 600));
+    afirmar((await vivo())[0].audio === silenciado.audio && silenciado.finesDeAudio === 1, "con el micrófono silenciado no viaja audio");
+    await pv.getByRole("button", { name: "Activar" }).click();
+    await hasta(async () => (await vivo())[0].audio > silenciado.audio, "al activar el micrófono vuelve a viajar");
+
+    // El servicio renueva la conexión cada tantos minutos: la llamada sigue sin volver a saludar.
+    await servicio({ goAway: { timeLeft: "20s" } });
+    const c1 = await hasta(async () => (await vivo())[1]?.ajustes && (await vivo())[1], "la pantalla abre una conexión nueva cuando el servicio avisa que corta");
+    const otraVez = c1.ajustes.systemInstruction.parts[0].text;
+    afirmar(otraVez.includes("Persona: Lo del patio ya lo barrí.") && otraVez.includes("Vos: Listo, la marqué como hecha.") && otraVez.includes("no vuelvas a saludar"),
+      "la conexión nueva recibe lo último que se habló, para seguir sin saludar de nuevo");
+    await hasta(async () => (await vivo())[1].audio > 3 && !(await vivo())[0].abierta, "el micrófono pasa a la conexión nueva");
+    afirmar((await vivo())[1].textos.length === 0, "al renovar la conexión, el Agente no vuelve a abrir la llamada");
+    await pv.getByText("Te escucho").waitFor();
+
+    await guion([{ siSistema: "archiva una sesión", texto: JSON.stringify({ resumen: "Llamada en vivo: quedó barrido el patio.", compromisos: [], memorias: [], bitacora: [] }) }]);
+    await pv.getByRole("button", { name: "Cortar" }).click();
+    await pv.waitForURL(/\/sesiones\/[0-9a-f-]{36}$/);
+    await pv.getByText("Llamada en vivo: quedó barrido el patio.").waitFor();
+    await pv.getByText("Lo del patio ya lo barrí.").first().waitFor({ state: "attached" });
+    const cierre = (await pedidosAlModelo()).at(-1);
+    afirmar(JSON.stringify(cierre.cuerpo).includes("Lo del patio ya lo barrí") && (await estado()).sessions.find((x) => x.id === enVivo.id).status === "completada" && !(await vivo())[1].abierta,
+      "al cortar se cierra la conexión y el resumen se arma con lo hablado en vivo");
+
+    // La voz y el motor se eligen en Configuración.
+    await pv.goto(BASE + "/configuracion");
+    await pv.getByLabel("Voz del Agente (en vivo)").selectOption("Kore");
+    await hasta(async () => (await estado()).profiles[0].agent_config.voz_vivo === "Kore", "la voz de la llamada en vivo se guarda en el perfil");
+    await pv.getByLabel("Cómo son las llamadas en este dispositivo").selectOption("turnos");
+    afirmar(await pv.evaluate(() => localStorage.getItem("miagente.voz.motor")) === "turnos", "puedo elegir llamadas por turnos, y queda en el dispositivo");
+    await captura("16c-config-voz", pv);
+    await contextoVivo.close();
+
+    // Respaldo: si la llamada en vivo no arranca o se cae, sigue por turnos sin perder el hilo.
+    const conRespaldo = await contexto.newPage();
+    await conRespaldo.addInitScript(instalarVozDePrueba);
+    await conRespaldo.addInitScript(() => { window.__vozDePrueba.vivo = true; });
+    conRespaldo.on("pageerror", (x) => errores.push("respaldo: " + String(x)));
+    const sinVivo = await (await sembrar("sessions", { kind: "llamada_programada", channel: "voz", status: "notificada", scheduled_at: new Date().toISOString(), notified_at: new Date().toISOString() })).json();
+    await guion([{ proveedor: "vivo", estado: 503, mensaje: "The model is overloaded" }, { texto: "Hola, hoy vamos por turnos." }]);
+    await conRespaldo.goto(`${BASE}/llamada/${sinVivo.id}`);
+    await conRespaldo.getByRole("button", { name: "Atender" }).click();
+    await conRespaldo.getByText("Hola, hoy vamos por turnos.").waitFor();
+    await conRespaldo.getByText(/No pude abrir la llamada en vivo: sigo por turnos/).waitFor();
+    afirmar((await conRespaldo.evaluate(() => window.__vozDePrueba.dicho.join(" "))).includes("hoy vamos por turnos"), "si el servicio de voz en vivo falla al atender, la llamada sigue por turnos y avisa");
+    await editar("sessions", sinVivo.id, { status: "completada" });
+
+    const seCae = await (await sembrar("sessions", { kind: "llamada_programada", channel: "voz", status: "notificada", scheduled_at: new Date().toISOString(), notified_at: new Date().toISOString() })).json();
+    const conexionesAntes = (await vivo()).length;
+    await conRespaldo.goto(`${BASE}/llamada/${seCae.id}`);
+    await conRespaldo.getByRole("button", { name: "Atender" }).click();
+    const c2 = await hasta(async () => (await vivo())[conexionesAntes]?.textos.length && (await vivo())[conexionesAntes], "la llamada arranca en vivo");
+    afirmar(c2.fijado.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName === "Kore", "la llamada usa la voz elegida en Configuración");
+    await servicio(voz(200), dice("Arranquemos por lo urgente."), finTurno);
+    await conRespaldo.getByText("Arranquemos por lo urgente.").waitFor();
+    // Esta página no tiene micrófono de verdad (usa la voz de prueba): en vivo queda para escribir.
+    await conRespaldo.getByText("Escribí abajo").waitFor();
+    // El servicio se cae y no vuelve: tres intentos de reconexión fallan.
+    await guion([{ proveedor: "vivo", estado: 503 }, { proveedor: "vivo", estado: 503 }, { proveedor: "vivo", estado: 503 }, { texto: "Acá sigo, por turnos." }]);
+    await fetch(`${MODELOS}/__vivo`, { method: "POST", body: JSON.stringify({ cerrar: 1011 }) });
+    await conRespaldo.getByText(/Se cortó la llamada en vivo: sigo por turnos/).waitFor();
+    await hasta(() => conRespaldo.evaluate(() => window.__vozDePrueba.escuchando), "tras caerse, el motor por turnos queda escuchando");
+    await conRespaldo.getByText("Arranquemos por lo urgente.").waitFor();
+    await conRespaldo.evaluate(() => window.__vozDePrueba.decir("¿Seguís ahí?"));
+    await conRespaldo.getByText("Acá sigo, por turnos.").waitFor();
+    afirmar(JSON.stringify((await pedidosAlModelo()).at(-1).cuerpo).includes("Arranquemos por lo urgente."),
+      "si la llamada en vivo se cae en medio, sigue por turnos con lo ya conversado");
+    await editar("sessions", seCae.id, { status: "completada" });
+
+    // Con «por turnos» elegido, ni se intenta la llamada en vivo.
+    const porTurnos = await (await sembrar("sessions", { kind: "llamada_programada", channel: "voz", status: "notificada", scheduled_at: new Date().toISOString(), notified_at: new Date().toISOString() })).json();
+    await conRespaldo.evaluate(() => localStorage.setItem("miagente.voz.motor", "turnos"));
+    const tokensAntes = (await pedidosVivo()).length;
+    await guion([{ texto: "Hola, por turnos como pediste." }]);
+    await conRespaldo.goto(`${BASE}/llamada/${porTurnos.id}`);
+    await conRespaldo.getByRole("button", { name: "Atender" }).click();
+    await conRespaldo.getByText("Hola, por turnos como pediste.").waitFor();
+    afirmar((await pedidosVivo()).length === tokensAntes, "con «por turnos» elegido en el dispositivo no se usa la llamada en vivo");
+    await conRespaldo.evaluate(() => localStorage.removeItem("miagente.voz.motor"));
+    await editar("sessions", porTurnos.id, { status: "completada" });
+    await conRespaldo.close();
 
     console.log("Llamadas programadas");
     await pagina.goto(BASE + "/configuracion");

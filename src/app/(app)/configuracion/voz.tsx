@@ -9,6 +9,7 @@ import { usePerfil } from "@/lib/datos/perfil";
 import { evaluarCupo } from "@/lib/voz/cupo";
 import { guardarSensibilidad, leerSensibilidad, SENSIBILIDADES, type Sensibilidad } from "@/lib/voz/deteccion";
 import { VOCES, VOZ_POR_DEFECTO } from "@/lib/voz/tipos";
+import { guardarMotor, leerMotor, VOCES_VIVO, VOZ_VIVO_POR_DEFECTO, type Motor } from "@/lib/voz/vivo/tipos";
 
 function Barra({ etiqueta, detalle, porcentaje }: { etiqueta: string; detalle: string; porcentaje: number }) {
   return (
@@ -24,24 +25,31 @@ function Barra({ etiqueta, detalle, porcentaje }: { etiqueta: string; detalle: s
   );
 }
 
-/** Voz del Agente y uso del cupo gratuito de Azure en el mes. */
+/** Cómo son las llamadas (en vivo o por turnos), la voz del Agente y el uso del cupo gratuito de Azure. */
 export function ConfigVoz() {
   const { avisar } = useDatos();
   const { perfil, guardarConfig } = usePerfil();
   const [estado, setEstado] = useState<EstadoApp | null>(null);
   // Se guarda en este dispositivo: cada micrófono y cada parlante son distintos.
   const [sensibilidad, setSensibilidad] = useState<Sensibilidad | null>(null);
+  const [motor, setMotor] = useState<Motor | null>(null);
 
   useEffect(() => {
     let vigente = true;
     void estadoApp().then((e) => vigente && setEstado(e));
-    void Promise.resolve().then(() => vigente && setSensibilidad(leerSensibilidad()));
+    void Promise.resolve().then(() => {
+      if (!vigente) return;
+      setSensibilidad(leerSensibilidad());
+      setMotor(leerMotor());
+    });
     return () => {
       vigente = false;
     };
   }, []);
 
   const voz = typeof perfil?.agent_config.voz === "string" ? perfil.agent_config.voz : VOZ_POR_DEFECTO;
+  const vozVivo = VOCES_VIVO.some((v) => v.id === perfil?.agent_config.voz_vivo) ? (perfil?.agent_config.voz_vivo as string) : VOZ_VIVO_POR_DEFECTO;
+  const enVivo = Boolean(estado?.vivo) && motor !== "turnos";
   // El cupo es uno solo para todo el despliegue: solo lo ve quien lo administra.
   const uso = estado?.usoVoz ?? null;
   const cupo = estado?.cupos ? evaluarCupo(uso, estado.cupos) : null;
@@ -50,14 +58,59 @@ export function ConfigVoz() {
     <Tarjeta>
       <h2 className="rotulo mb-1 flex items-center gap-2">
         Voz
-        {estado ? <Etiqueta tono={estado.azure ? "ok" : "neutro"}>{estado.azure ? "Azure configurado" : "Voz del navegador"}</Etiqueta> : null}
+        {estado ? (
+          <Etiqueta tono={enVivo || estado.azure ? "ok" : "neutro"}>
+            {enVivo ? "Llamada en vivo" : estado.azure ? "Azure configurado" : "Voz del navegador"}
+          </Etiqueta>
+        ) : null}
       </h2>
       <p className="mb-4 text-sm text-texto-2">
-        {estado?.azure
-          ? "Las llamadas usan Azure Speech dentro del cupo gratuito. Si se agota, siguen con la voz del navegador o por texto."
-          : "Azure Speech no está configurado: las llamadas usan el reconocimiento y la voz propios del navegador, que no tienen cupo pero suenan peor y no andan en todos los navegadores."}
+        {enVivo
+          ? "Las llamadas son en vivo: el micrófono queda abierto todo el tiempo y podés hablarle encima al Agente, como por teléfono. Si no se puede conectar, la llamada sigue por turnos."
+          : estado?.azure
+            ? "Las llamadas usan Azure Speech dentro del cupo gratuito. Si se agota, siguen con la voz del navegador o por texto."
+            : "Azure Speech no está configurado: las llamadas usan el reconocimiento y la voz propios del navegador, de a un turno por vez, que no tienen cupo pero suenan peor y no andan en todos los navegadores."}
       </p>
       <div className="flex flex-col gap-4">
+        {estado?.vivo ? (
+          <>
+            <Campo
+              etiqueta="Cómo son las llamadas en este dispositivo"
+              htmlFor="voz-motor"
+              ayuda="En vivo, la voz la pone Gemini (gratis, con un límite diario) y el audio de la llamada lo procesa Google. Por turnos, todo queda en la voz y el dictado del navegador."
+            >
+              <Selector
+                id="voz-motor"
+                value={motor ?? "vivo"}
+                disabled={motor === null}
+                onChange={(e) => {
+                  const nuevo = e.target.value as Motor;
+                  setMotor(nuevo);
+                  guardarMotor(nuevo);
+                }}
+              >
+                <option value="vivo">En vivo: como una llamada (recomendado)</option>
+                <option value="turnos">Por turnos: habla uno por vez</option>
+              </Selector>
+            </Campo>
+            <Campo etiqueta="Voz del Agente (en vivo)" htmlFor="voz-vivo">
+              <Selector
+                id="voz-vivo"
+                value={vozVivo}
+                disabled={!perfil}
+                onChange={async (e) => {
+                  if (!(await guardarConfig({ voz_vivo: e.target.value }))) avisar("No se pudo guardar la voz.");
+                }}
+              >
+                {VOCES_VIVO.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.nombre}
+                  </option>
+                ))}
+              </Selector>
+            </Campo>
+          </>
+        ) : null}
         <Campo
           etiqueta="Interrumpir al Agente hablando"
           htmlFor="voz-interrupcion"

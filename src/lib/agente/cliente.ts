@@ -72,6 +72,8 @@ export type EstadoApp = {
   claude: boolean;
   proveedores: { id: string; nombre: string; modelo: string }[];
   azure: boolean;
+  /** Las llamadas pueden ser en vivo (audio continuo con Gemini). */
+  vivo?: boolean;
   push: boolean;
   cron: boolean;
   servicio: boolean;

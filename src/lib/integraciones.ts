@@ -53,8 +53,8 @@ export function integraciones(): Integracion[] {
       id: "gemini",
       nombre: "Gemini (cerebro gratuito)",
       configurada: tiene("GEMINI_API_KEY"),
-      paraQue: "Chat y llamadas con el Agente.",
-      variables: ["GEMINI_API_KEY", "GEMINI_MODEL_CHAT", "GEMINI_MODEL_FONDO"],
+      paraQue: "Chat con el Agente y llamadas en vivo (se le puede hablar encima, como por teléfono).",
+      variables: ["GEMINI_API_KEY", "GEMINI_MODEL_CHAT", "GEMINI_MODEL_FONDO", "GEMINI_MODEL_VIVO"],
     },
     {
       id: "groq",

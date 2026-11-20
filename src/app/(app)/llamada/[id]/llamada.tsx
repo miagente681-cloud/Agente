@@ -10,12 +10,16 @@ import { pedirTurno } from "@/lib/agente/cliente";
 import { useDatos } from "@/lib/datos/almacen";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { crearVozAzure } from "@/lib/voz/azure";
-import { ControlLlamada, type EstadoLlamada } from "@/lib/voz/llamada";
-import { desbloquearAudio } from "@/lib/voz/desbloqueo";
+import { ControlLlamada, type Control, type EstadoLlamada, type Linea } from "@/lib/voz/llamada";
+import { contextoDeAudio, desbloquearAudio } from "@/lib/voz/desbloqueo";
 import { crearVozNavegador, navegadorEscucha } from "@/lib/voz/navegador";
 import type { ProveedorVoz, RespuestaToken } from "@/lib/voz/tipos";
 import { leerSensibilidad, type Sensibilidad } from "@/lib/voz/deteccion";
 import { crearMonitor, type Monitor } from "@/lib/voz/volumen";
+import { abrirCaptura, modoLlamada, Parlante, type Captura } from "@/lib/voz/vivo/audio";
+import { abrirEnchufe } from "@/lib/voz/vivo/conexion";
+import { LlamadaEnVivo } from "@/lib/voz/vivo/llamada";
+import { leerMotor, type RespuestaSesionViva, type ResultadoTurnoVivo } from "@/lib/voz/vivo/tipos";
 
 type Sesion = { id: string; kind: string; status: string; scheduled_at: string | null; focus: string | null };
 type Pantalla =
@@ -31,7 +35,7 @@ const FASE: Record<EstadoLlamada["fase"], string> = {
   hablando: "Hablando",
   cerrada: "Llamada terminada",
 };
-const MOTOR: Record<string, string> = { azure: "Azure", navegador: "la del navegador", prueba: "de prueba" };
+const MOTOR: Record<string, string> = { azure: "Azure", navegador: "la del navegador", prueba: "de prueba", vivo: "en vivo" };
 const ROTULO: Record<string, string> = { onboarding: "Entrevista inicial", chat: "Chat de voz", llamada_programada: "Llamada" };
 
 const pedirToken = (): Promise<RespuestaToken> =>
@@ -39,8 +43,25 @@ const pedirToken = (): Promise<RespuestaToken> =>
     .then((r) => (r.ok ? (r.json() as Promise<RespuestaToken>) : { azure: false as const, motivo: "error" as const }))
     .catch(() => ({ azure: false as const, motivo: "error" as const }));
 
-/** Gancho solo para las pruebas en navegador: un proveedor de voz de mentira. */
-type VozDePrueba = ProveedorVoz & { nivel?: () => number };
+const enviarJson = (ruta: string, cuerpo: unknown) =>
+  // keepalive: el pedido sale aunque se esté cerrando la página.
+  fetch(ruta, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo), keepalive: true });
+
+/** Avisa al servidor qué pasó con la conexión de voz en vivo, para poder diagnosticar. */
+const informar = (evento: string, detalle?: string) => void enviarJson("/api/voice/vivo/aviso", { evento, detalle }).catch(() => null);
+
+/**
+ * Gancho solo para las pruebas en navegador: un proveedor de voz de mentira.
+ * Con `vivo`, primero se intenta la llamada en vivo y este queda de respaldo.
+ */
+type VozDePrueba = ProveedorVoz & { nivel?: () => number; vivo?: boolean };
+
+/**
+ * Lo que hereda el motor por turnos cuando la llamada en vivo no arranca o se
+ * cae: el micrófono ya abierto (o que ya se pidió y no hubo permiso), lo
+ * conversado y el aviso para la persona.
+ */
+type Heredado = { mic: MediaStream | null; pidioMicrofono: boolean; lineas: Linea[]; aviso: string | null };
 
 /** Cada cuánto se mide el volumen del micrófono. */
 const MEDIR_CADA_MS = 40;
@@ -51,6 +72,11 @@ const MEDIR_CADA_MS = 40;
  */
 const ENTRE_REAPERTURAS_MS = 3000;
 const MAX_REAPERTURAS = 30;
+/** Al cortar, cuánto se espera a que termine de guardarse lo último que se habló. */
+const ESPERA_GUARDADO_MS = 4000;
+/** Cuánto tiene que estar frenado el sonido, con el Agente hablando, para pedirle un toque a la persona. */
+const SONIDO_FRENADO_MS = 1500;
+const SIN_PERMISO = "No tengo permiso para usar el micrófono. Podés escribir abajo y te respondo hablando.";
 const vozDePrueba = () => (window as unknown as { __vozDePrueba?: VozDePrueba }).__vozDePrueba ?? null;
 
 export function Llamada({ id }: { id: string }) {
@@ -60,13 +86,18 @@ export function Llamada({ id }: { id: string }) {
   const [estado, setEstado] = useState<EstadoLlamada | null>(null);
   const [conMicrofono, setConMicrofono] = useState(false);
   const [texto, setTexto] = useState("");
-  const control = useRef<ControlLlamada | null>(null);
+  const control = useRef<Control | null>(null);
   const limpiezas = useRef<(() => void)[]>([]);
   const finTranscripcion = useRef<HTMLDivElement>(null);
   // El aro que muestra que el micrófono te oye. Se mueve sin pasar por React (25 veces por segundo).
   const aro = useRef<HTMLSpanElement>(null);
   const monitor = useRef<Monitor | null>(null);
+  const captura = useRef<Captura | null>(null);
+  const microfono = useRef<MediaStream | null>(null);
+  const parlante = useRef<Parlante | null>(null);
+  const frenadoDesde = useRef<number | null>(null);
   const reaperturas = useRef({ veces: 0, ultima: 0 });
+  const avisoSinAudio = useRef(false);
   const [sensibilidad, setSensibilidad] = useState<Sensibilidad>("normal");
 
   useEffect(() => {
@@ -94,21 +125,14 @@ export function Llamada({ id }: { id: string }) {
 
   const reportarUso = useCallback(() => {
     const segundos = control.current?.segundosNuevos() ?? 0;
-    if (segundos > 0) {
-      // keepalive: el pedido sale aunque se esté cerrando la página.
-      void fetch("/api/voice/uso", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ segundos: Math.min(segundos, 300) }),
-        keepalive: true,
-      }).catch(() => null);
-    }
+    if (segundos > 0) void enviarJson("/api/voice/uso", { segundos: Math.min(segundos, 300) }).catch(() => null);
   }, []);
 
   const limpiar = useCallback(() => {
     reportarUso();
     control.current?.cerrar();
     control.current = null;
+    captura.current = null;
     limpiezas.current.forEach((f) => f());
     limpiezas.current = [];
   }, [reportarUso]);
@@ -139,8 +163,10 @@ export function Llamada({ id }: { id: string }) {
         inicial: token,
         pedirToken,
         microfono,
-        alAgotarse: () =>
-          control.current?.cambiarVoz(vozDelNavegador(), "Se agotó el cupo de voz de Azure de este mes: sigo con la voz del navegador."),
+        alAgotarse: () => {
+          const c = control.current;
+          if (c instanceof ControlLlamada) c.cambiarVoz(vozDelNavegador(), "Se agotó el cupo de voz de Azure de este mes: sigo con la voz del navegador.");
+        },
       }).catch(() => null);
       if (azure && token.aviso) aviso = `Vas por el ${token.porcentaje} % del cupo gratuito de voz de este mes.`;
     } else if (token.motivo === "agotado") {
@@ -154,26 +180,48 @@ export function Llamada({ id }: { id: string }) {
   }
 
   /**
-   * Pide el micrófono y deja listo el medidor de volumen. Devuelve null si no
-   * hay permiso. La cancelación de eco es lo que deja interrumpir hablando: sin
-   * ella el micrófono oiría sobre todo al propio Agente.
+   * Pide el micrófono. Devuelve null si no hay permiso. La cancelación de eco
+   * es lo que deja hablarle encima al Agente: sin ella el micrófono lo oiría
+   * sobre todo a él.
    */
-  async function abrirMicrofono(): Promise<{ mic: MediaStream; nivel: () => number | null } | null> {
+  async function pedirMicrofono(): Promise<MediaStream | null> {
     try {
       const mic = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
-      const nuevo = crearMonitor(mic);
-      monitor.current = nuevo;
-      limpiezas.current.push(() => mic.getTracks().forEach((t) => t.stop()), () => nuevo?.cerrar());
-      return { mic, nivel: () => nuevo?.nivel() ?? null };
+      limpiezas.current.push(() => mic.getTracks().forEach((t) => t.stop()));
+      microfono.current = mic;
+      return mic;
     } catch {
       return null;
     }
   }
 
-  /** Mide el volumen, deja que el control decida si es una interrupción y mueve el aro. */
-  function medir(c: ControlLlamada) {
+  /** Motor por turnos: el medidor de volumen que detecta que le hablan encima al Agente. */
+  function medirMicrofono(mic: MediaStream): () => number | null {
+    const nuevo = crearMonitor(mic);
+    monitor.current = nuevo;
+    limpiezas.current.push(() => nuevo?.cerrar());
+    return () => nuevo?.nivel() ?? null;
+  }
+
+  /** Llamada en vivo: el micrófono viaja al servicio de voz todo el tiempo, en trozos. */
+  async function transmitirMicrofono(c: LlamadaEnVivo, mic: MediaStream): Promise<Captura | null> {
+    const contexto = contextoDeAudio();
+    if (!contexto) return null;
+    if (contexto.state !== "running") await contexto.resume().catch(() => null);
+    const nueva = await abrirCaptura(contexto, mic, (pcm) => c.recibirAudio(pcm)).catch(() => null);
+    if (!nueva) return null;
+    captura.current = nueva;
+    limpiezas.current.push(() => nueva.cerrar());
+    c.ponerNivel(nueva.nivel);
+    return nueva;
+  }
+
+  /** Mueve el aro con el volumen del micrófono y, si el sistema lo cortó, lo vuelve a pedir. */
+  function medir() {
+    const c = control.current;
+    if (!c) return;
     const nivel = c.revisarVolumen();
     if (aro.current) {
       // De 0 a 0,15 de volumen, el aro crece hasta un 70 %.
@@ -181,15 +229,61 @@ export function Llamada({ id }: { id: string }) {
       aro.current.style.transform = `scale(${1 + tamano})`;
       aro.current.style.opacity = nivel !== null && nivel > 0.01 ? "1" : "0";
     }
-    // Si el sistema cortó el micrófono del todo, no vuelve solo: se pide de nuevo
-    // cuando sirve para algo (mientras se escucha, el reconocimiento usa el suyo).
     const r = reaperturas.current;
+    const puedeReabrir = r.veces < MAX_REAPERTURAS && Date.now() - r.ultima > ENTRE_REAPERTURAS_MS;
+    if (c instanceof LlamadaEnVivo) {
+      // El Agente "habla" pero el teléfono tiene el sonido frenado: hace falta un toque.
+      const frenado = c.estado.fase === "hablando" && Boolean(parlante.current?.frenado);
+      if (!frenado) frenadoDesde.current = null;
+      else if (frenadoDesde.current === null) frenadoDesde.current = Date.now();
+      else if (frenadoDesde.current > 0 && Date.now() - frenadoDesde.current > SONIDO_FRENADO_MS) {
+        frenadoDesde.current = -1; // Ya se avisó.
+        informar("sin_audio", "parlante frenado");
+        c.avisar("El teléfono bloqueó el sonido. Tocá la pantalla una vez y el Agente vuelve a hablar.");
+      }
+      if (c.estado.sordo && !avisoSinAudio.current) {
+        avisoSinAudio.current = true;
+        informar("sin_audio", `captura ${captura.current?.via ?? "ninguna"}`);
+      }
+      if (captura.current?.terminado() && puedeReabrir) {
+        reaperturas.current = { veces: r.veces + 1, ultima: Date.now() };
+        captura.current.cerrar();
+        captura.current = null;
+        void pedirMicrofono().then((mic) => {
+          if (mic && control.current === c) void transmitirMicrofono(c, mic);
+        });
+      }
+      return;
+    }
+    // Por turnos: si el sistema cortó el micrófono del todo, no vuelve solo. Se pide de nuevo
+    // cuando sirve para algo (mientras se escucha, el reconocimiento usa el suyo).
     const haceFalta = c.estado.fase === "pensando" || c.estado.fase === "hablando";
-    if (haceFalta && monitor.current?.terminado() && r.veces < MAX_REAPERTURAS && Date.now() - r.ultima > ENTRE_REAPERTURAS_MS) {
+    if (haceFalta && monitor.current?.terminado() && puedeReabrir) {
       reaperturas.current = { veces: r.veces + 1, ultima: Date.now() };
       monitor.current = null;
-      void abrirMicrofono().then((abierto) => abierto && control.current === c && c.ponerNivel(abierto.nivel));
+      void pedirMicrofono().then((mic) => {
+        if (mic && control.current === c) c.ponerNivel(medirMicrofono(mic));
+      });
     }
+  }
+
+  /** Que el teléfono no apague la pantalla en medio de la llamada (se llevaría el micrófono). */
+  function mantenerPantalla() {
+    let bloqueo: WakeLockSentinel | null = null;
+    const pedir = () => {
+      if (document.visibilityState !== "visible") return;
+      void navigator.wakeLock
+        ?.request("screen")
+        .then((b) => (bloqueo = b))
+        .catch(() => null);
+    };
+    pedir();
+    // El sistema lo suelta al salir de la app: se vuelve a pedir al volver.
+    document.addEventListener("visibilitychange", pedir);
+    limpiezas.current.push(() => {
+      document.removeEventListener("visibilitychange", pedir);
+      void bloqueo?.release().catch(() => null);
+    });
   }
 
   /** Tiene que arrancar desde un toque: el navegador no da micrófono ni audio de otra forma. */
@@ -199,27 +293,113 @@ export function Llamada({ id }: { id: string }) {
     // Y cada toque durante la llamada lo vuelve a habilitar (por si el teléfono lo suspendió).
     window.addEventListener("pointerdown", desbloquearAudio);
     limpiezas.current.push(() => window.removeEventListener("pointerdown", desbloquearAudio));
+    mantenerPantalla();
     setPantalla({ tipo: "en_llamada", sesion });
+    const elegida = leerSensibilidad();
+    setSensibilidad(elegida);
+    const volumen = setInterval(medir, MEDIR_CADA_MS);
+    const uso = setInterval(reportarUso, 30_000);
+    limpiezas.current.push(() => clearInterval(volumen), () => clearInterval(uso));
+    // En una llamada o en la entrevista abre el Agente; en un chat de voz empieza la persona.
+    const abre = !yaEmpezada && sesion.kind !== "chat";
+    const prueba = vozDePrueba();
+    let heredado: Heredado | null = null;
+    if ((!prueba || prueba.vivo) && leerMotor() === "vivo") {
+      heredado = await empezarEnVivo(sesion, abre, quiereMicrofono, elegida);
+      // Arrancó en vivo: si más adelante se cae, ella misma sigue por turnos.
+      if (!heredado) return;
+    }
+    await empezarPorTurnos(sesion, abre, quiereMicrofono, elegida, heredado);
+  }
+
+  /**
+   * Llamada en vivo: audio continuo en los dos sentidos, se le puede hablar
+   * encima al Agente. Devuelve null si quedó andando; si no se pudo, lo que
+   * necesita el motor por turnos para seguir sin volver a pedir el micrófono.
+   */
+  async function empezarEnVivo(sesion: Sesion, abre: boolean, quiereMicrofono: boolean, elegida: Sensibilidad): Promise<Heredado | null> {
+    const contexto = contextoDeAudio();
+    if (!contexto) return { mic: null, pidioMicrofono: false, lineas: [], aviso: null };
+    const restaurar = modoLlamada();
+    const mic = quiereMicrofono && !vozDePrueba() ? await pedirMicrofono() : null;
+    const altavoz = new Parlante(contexto);
+    parlante.current = altavoz;
+    const c: LlamadaEnVivo = new LlamadaEnVivo({
+      parlante: altavoz,
+      sensibilidad: elegida,
+      silenciado: !mic,
+      alCambiar: (e) => control.current === c && setEstado(e),
+      // «Terminá la sesión»: el Agente se despide y la llamada se corta sola, como con el botón.
+      alTerminar: () => void cortar(),
+      alCaer: () =>
+        void pasarATurnos("Se cortó la llamada en vivo: sigo por turnos (para interrumpirme, hablá fuerte o tocá «Interrumpir»)."),
+      informar,
+      abrir: abrirEnchufe,
+      pedirSesion: (p) =>
+        enviarJson("/api/voice/vivo", { sesionId: sesion.id, ...p })
+          .then((r) => (r.ok ? (r.json() as Promise<RespuestaSesionViva>) : { vivo: false as const, motivo: "error" as const }))
+          .catch(() => ({ vivo: false as const, motivo: "error" as const })),
+      guardar: (pedido) =>
+        enviarJson("/api/voice/vivo/turno", { sesionId: sesion.id, ...pedido })
+          .then((r) => (r.ok ? (r.json() as Promise<ResultadoTurnoVivo>) : null))
+          .catch(() => null),
+    });
+    /** Suelta lo propio de la llamada en vivo (no el micrófono) y deja lo que hereda el otro motor. */
+    const soltar = (aviso: string | null): Heredado | null => {
+      if (control.current !== c) return null;
+      const lineas = c.estado.lineas;
+      control.current = null;
+      c.cerrar();
+      captura.current?.cerrar();
+      captura.current = null;
+      altavoz.cerrar();
+      parlante.current = null;
+      restaurar();
+      // El micrófono puede haberse activado después de atender: vale el último que siga abierto.
+      const abierto = microfono.current?.getAudioTracks().some((t) => t.readyState === "live") ? microfono.current : null;
+      return { mic: abierto, pidioMicrofono: quiereMicrofono && !vozDePrueba(), lineas, aviso };
+    };
+    const pasarATurnos = async (aviso: string) => {
+      const heredado = soltar(aviso);
+      informar("respaldo", "en medio de la llamada");
+      // Ya se venía hablando: el Agente no vuelve a abrir.
+      if (heredado) await empezarPorTurnos(sesion, false, quiereMicrofono || Boolean(heredado.mic), elegida, heredado);
+    };
+    control.current = c;
+    limpiezas.current.push(() => altavoz.cerrar(), restaurar);
+    setEstado(c.estado);
+    setConMicrofono(Boolean(mic));
+
+    const resultado = await c.empezar(abre);
+    if (control.current !== c) return null; // Cortaron mientras conectaba.
+    if (resultado !== "ok") {
+      if (resultado !== "sin_configurar") informar("respaldo", `al atender: ${resultado}`);
+      return soltar(resultado === "sin_configurar" ? null : "No pude abrir la llamada en vivo: sigo por turnos (para interrumpirme, hablá fuerte o tocá «Interrumpir»).");
+    }
+    const abierta = mic ? await transmitirMicrofono(c, mic) : null;
+    informar("conectada", abierta ? `micrófono por ${abierta.via} a ${abierta.tasa} Hz` : "sin micrófono");
+    if (quiereMicrofono && !abierta) c.avisar(SIN_PERMISO);
+    return null;
+  }
+
+  /** Motor por turnos: la voz y el dictado del navegador (o Azure), de a uno por vez. */
+  async function empezarPorTurnos(sesion: Sesion, abre: boolean, quiereMicrofono: boolean, elegida: Sensibilidad, heredado: Heredado | null) {
     const prueba = vozDePrueba();
     let voz: ProveedorVoz;
     let aviso: string | null = null;
     let nivel: (() => number | null) | undefined;
     let hayMicrofono = false;
-    const elegida = leerSensibilidad();
-    setSensibilidad(elegida);
 
     if (prueba) {
       voz = prueba;
       nivel = prueba.nivel;
       hayMicrofono = quiereMicrofono;
     } else {
-      const abierto = quiereMicrofono ? await abrirMicrofono() : null;
-      hayMicrofono = Boolean(abierto);
-      nivel = abierto?.nivel;
-      ({ voz, aviso } = await armarVoz(abierto?.mic ?? null));
-      if (quiereMicrofono && !abierto) {
-        aviso = "No tengo permiso para usar el micrófono. Podés escribir abajo y te respondo hablando.";
-      }
+      const mic = heredado?.mic ?? (quiereMicrofono && !heredado?.pidioMicrofono ? await pedirMicrofono() : null);
+      hayMicrofono = Boolean(mic);
+      nivel = mic ? medirMicrofono(mic) : undefined;
+      ({ voz, aviso } = await armarVoz(mic));
+      if (quiereMicrofono && !mic) aviso = SIN_PERMISO;
     }
     setConMicrofono(hayMicrofono);
 
@@ -228,19 +408,18 @@ export function Llamada({ id }: { id: string }) {
       nivel,
       sensibilidad: elegida,
       silenciado: !hayMicrofono,
-      alCambiar: setEstado,
+      lineas: heredado?.lineas,
+      alCambiar: (e) => control.current === c && setEstado(e),
       // «Terminá la sesión»: el Agente se despide y la llamada se corta sola, como con el botón.
       alTerminar: () => void cortar(),
       turno: (pedido, senal) =>
         pedirTurno({ ...pedido, sesionId: sesion.id, canal: "voz", voz: c.estado.motor === "azure" ? "azure" : "navegador" }, senal),
     });
     control.current = c;
-    setEstado({ ...c.estado, aviso });
-    const volumen = setInterval(() => medir(c), MEDIR_CADA_MS);
-    const uso = setInterval(reportarUso, 30_000);
-    limpiezas.current.push(() => clearInterval(volumen), () => clearInterval(uso));
-    // En una llamada o en la entrevista abre el Agente; en un chat de voz empieza la persona.
-    await c.empezar(!yaEmpezada && sesion.kind !== "chat");
+    setEstado(c.estado);
+    const avisos = [heredado?.aviso, aviso].filter(Boolean).join(" ");
+    if (avisos) c.avisar(avisos);
+    await c.empezar(abre);
   }
 
   /** El botón del micrófono: silencia, vuelve a escuchar o, si nunca se activó, lo pide. */
@@ -249,15 +428,22 @@ export function Llamada({ id }: { id: string }) {
     const c = control.current;
     if (!c) return;
     if (conMicrofono) return c.silenciar(!c.estado.silenciado);
+    const sinPermiso = "No tengo permiso para usar el micrófono. Habilitalo en los ajustes del sitio; mientras tanto podés escribir.";
+    if (c instanceof LlamadaEnVivo) {
+      const mic = await pedirMicrofono();
+      if (!mic || control.current !== c || !(await transmitirMicrofono(c, mic))) return c.avisar(sinPermiso);
+      setConMicrofono(true);
+      return c.silenciar(false);
+    }
     if (vozDePrueba()) {
       setConMicrofono(true);
       return c.silenciar(false);
     }
-    const abierto = await abrirMicrofono();
-    if (!abierto) return c.avisar("No tengo permiso para usar el micrófono. Habilitalo en los ajustes del sitio; mientras tanto podés escribir.");
-    const { voz, aviso } = await armarVoz(abierto.mic);
-    c.ponerNivel(abierto.nivel);
-    c.cambiarVoz(voz, aviso);
+    const mic = await pedirMicrofono();
+    if (!mic) return c.avisar(sinPermiso);
+    const { voz, aviso } = await armarVoz(mic);
+    c.ponerNivel(medirMicrofono(mic));
+    if (c instanceof ControlLlamada) c.cambiarVoz(voz, aviso);
     setConMicrofono(true);
     c.silenciar(false);
   }
@@ -270,16 +456,25 @@ export function Llamada({ id }: { id: string }) {
     setTexto("");
   }
 
-  async function cortar() {
+  /** Corta todo y espera (un momento) a que quede guardado lo último que se habló en vivo. */
+  async function soltarTodo() {
+    const c = control.current;
     limpiar();
+    if (c instanceof LlamadaEnVivo) {
+      await Promise.race([c.pendientes(), new Promise((r) => setTimeout(r, ESPERA_GUARDADO_MS))]);
+    }
+  }
+
+  async function cortar() {
     setEstado((e) => (e ? { ...e, fase: "cerrada" } : e));
+    await soltarTodo();
     await fetch(`/api/sesiones/${id}/cerrar`, { method: "POST" }).catch(() => null);
     void recargar();
     router.replace(`/sesiones/${id}`);
   }
 
-  function pasarATexto() {
-    limpiar();
+  async function pasarATexto() {
+    await soltarTodo();
     router.replace(`/chat?sesion=${id}`);
   }
 
@@ -318,7 +513,7 @@ export function Llamada({ id }: { id: string }) {
             <Keyboard size={16} aria-hidden />
             Sin micrófono: yo escribo, el Agente habla
           </Boton>
-          <button type="button" onClick={pasarATexto} className="rounded-sm text-sm text-texto-2 hover:text-texto">
+          <button type="button" onClick={() => void pasarATexto()} className="rounded-sm text-sm text-texto-2 hover:text-texto">
             Hacerla toda por escrito
           </button>
           {esChat ? (
@@ -460,7 +655,7 @@ export function Llamada({ id }: { id: string }) {
           {silenciado ? <MicOff size={18} aria-hidden /> : <Mic size={18} aria-hidden />}
           {silenciado ? (conMicrofono ? "Activar" : "Usar micrófono") : "Silenciar"}
         </Boton>
-        <Boton className="!h-14 flex-1 !rounded-full" onClick={pasarATexto}>
+        <Boton className="!h-14 flex-1 !rounded-full" onClick={() => void pasarATexto()}>
           <MessageSquareText size={18} aria-hidden />
           A texto
         </Boton>

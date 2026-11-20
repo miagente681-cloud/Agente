@@ -39,7 +39,8 @@
     "eslint-config-next": "16.4.6",
     "tailwindcss": "4.3.3",
     "typescript": "^5",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.0",
+    "ws": "^8.22.2"
   },
   "overrides": {
     "@typescript-eslint/typescript-estree": {

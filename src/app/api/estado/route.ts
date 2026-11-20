@@ -6,6 +6,7 @@ import { esAdministrador } from "@/lib/seguridad/permitidos";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { usuarioActual } from "@/lib/supabase/server";
 import { cuposDe } from "@/lib/voz/cupo";
+import { configVivo } from "@/lib/voz/vivo/servidor";
 
 /**
  * Qué funciones están disponibles en este despliegue. Solo sí o no: nunca
@@ -21,6 +22,8 @@ export async function GET() {
     detalle: false,
     agente: proveedores.length > 0,
     azure: integracionLista("azure"),
+    // Llamada en vivo: con la clave de Gemini y la de servicio (para contar el uso).
+    vivo: configVivo() !== null && integracionLista("servicio"),
     push: integracionLista("push"),
     // La clave pública VAPID es pública por diseño: el navegador la necesita para suscribirse.
     vapid: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "",

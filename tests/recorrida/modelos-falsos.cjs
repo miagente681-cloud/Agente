@@ -8,9 +8,15 @@
  *   { proveedor?: "gemini"|"groq"|"ollama", siSistema?: "texto que debe estar en el prompt",
  *     estado?: 429, texto?: "…", llamadas?: [{ nombre, argumentos }], cortar?: true }
  * Sin guion, responde un texto fijo.
+ *
+ * También imita la API en vivo de Gemini (Live API): entrega tokens de un solo
+ * uso y atiende el WebSocket. No genera nada sola: la prueba le dicta qué
+ * mensajes mandar (POST /__vivo, o servidor.enviarVivo) y después mira qué
+ * recibió (GET /__vivo, o servidor.vivo()).
  */
 const http = require("node:http");
 const { createHash } = require("node:crypto");
+const { WebSocketServer } = require("ws");
 
 /**
  * Caché de prompts de mentira, con las reglas de la API real: se escribe solo
@@ -79,6 +85,24 @@ function crearModelos() {
   let pedidos = [];
   let cacheClaude = crearCacheClaude();
 
+  // --- Gemini Live de mentira ----------------------------------------------------
+  const RUTA_VIVO = "/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained";
+  let tokensVivo = new Map();
+  let conexionesVivo = [];
+  const enchufes = new WebSocketServer({ noServer: true });
+  const resumenVivo = () => ({
+    conexiones: conexionesVivo.map(({ ws: _, ...resto }) => resto),
+  });
+  /** Manda mensajes del "servicio" a una conexión (por defecto, la última) y, si se pide, la cierra. */
+  function enviarVivo({ enviar = [], cerrar, conexion } = {}) {
+    const c = conexionesVivo[conexion ?? conexionesVivo.length - 1];
+    if (!c) return false;
+    // Como el servicio real: JSON en tramas binarias.
+    for (const m of enviar) c.ws.send(Buffer.from(JSON.stringify(m)));
+    if (cerrar) c.ws.close(cerrar, "Cierre de prueba");
+    return true;
+  }
+
   function siguiente(proveedor, sistema) {
     const i = guion.findIndex(
       (p) => (!p.proveedor || p.proveedor === proveedor) && (!p.siSistema || sistema.includes(p.siSistema)),
@@ -144,7 +168,20 @@ function crearModelos() {
       if (url.pathname === "/__guion") return (guion = JSON.parse(crudo)), json(200, {});
       if (url.pathname === "/__agregar") return guion.push(...JSON.parse(crudo)), json(200, {});
       if (url.pathname === "/__pedidos") return json(200, pedidos);
-      if (url.pathname === "/__reiniciar") return (guion = []), (pedidos = []), (cacheClaude = crearCacheClaude()), json(200, {});
+      if (url.pathname === "/__reiniciar") return servidor.reiniciar(), json(200, {});
+      if (url.pathname === "/__vivo") return json(200, req.method === "POST" ? { ok: enviarVivo(JSON.parse(crudo)) } : resumenVivo());
+      if (url.pathname === "/v1alpha/auth_tokens") {
+        if (!req.headers["x-goog-api-key"]) return json(403, { error: { code: 403, message: "Falta la clave" } });
+        const cuerpo = JSON.parse(crudo);
+        pedidos.push({ proveedor: "vivo", ruta: url.pathname, cabeceras: req.headers, cuerpo });
+        // Solo consume pasos marcados para la llamada en vivo: no le saca respuestas al chat.
+        const i = guion.findIndex((p) => p.proveedor === "vivo");
+        const paso = i === -1 ? {} : guion.splice(i, 1)[0];
+        if (paso.estado) return json(paso.estado, { error: { code: paso.estado, message: paso.mensaje ?? "Error de prueba" } });
+        const nombre = `auth_tokens/prueba-${pedidos.length}`;
+        tokensVivo.set(nombre, { ajustes: cuerpo.bidiGenerateContentSetup, usos: cuerpo.uses ?? 1, mudo: Boolean(paso.mudo) });
+        return json(200, { name: nombre, expireTime: cuerpo.expireTime, newSessionExpireTime: cuerpo.newSessionExpireTime });
+      }
       if (url.pathname === "/sts/v1.0/issueToken") {
         res.writeHead(req.headers["ocp-apim-subscription-key"] ? 200 : 401);
         return res.end("token-de-mentira");
@@ -213,13 +250,51 @@ function crearModelos() {
       res.end();
     });
   });
+  servidor.on("upgrade", (req, socket, cabeza) => {
+    const url = new URL(req.url, "http://x");
+    const token = tokensVivo.get(url.searchParams.get("access_token"));
+    // Como el servicio real: sin un token vigente no hay conexión, y cada token sirve una vez.
+    if (url.pathname !== RUTA_VIVO || !token || token.usos < 1) return socket.destroy();
+    token.usos--;
+    enchufes.handleUpgrade(req, socket, cabeza, (ws) => {
+      const c = { ws, fijado: token.ajustes, ajustes: null, audio: 0, bytesDeAudio: 0, textos: [], finesDeAudio: 0, respuestas: [], otros: [], abierta: true };
+      conexionesVivo.push(c);
+      ws.on("message", (dato) => {
+        const m = JSON.parse(dato.toString());
+        if (m.setup) {
+          c.ajustes = m.setup;
+          // `mudo`: el servicio nunca acepta los ajustes (para probar la espera).
+          if (!token.mudo) ws.send(Buffer.from(JSON.stringify({ setupComplete: {} })));
+        } else if (m.realtimeInput?.audio) {
+          c.audio++;
+          c.bytesDeAudio += Buffer.from(m.realtimeInput.audio.data, "base64").length;
+          c.formatoDeAudio = m.realtimeInput.audio.mimeType;
+        } else if (typeof m.realtimeInput?.text === "string") c.textos.push(m.realtimeInput.text);
+        else if (m.realtimeInput?.audioStreamEnd) c.finesDeAudio++;
+        else if (m.toolResponse) c.respuestas.push(...(m.toolResponse.functionResponses ?? []));
+        else c.otros.push(m);
+      });
+      ws.on("close", () => (c.abierta = false));
+    });
+  });
   servidor.guion = (pasos) => (guion = [...pasos]);
   servidor.pedidos = () => pedidos;
+  servidor.vivo = resumenVivo;
+  servidor.enviarVivo = enviarVivo;
   // Sin devolver nada: vitest toma una función devuelta por beforeEach como limpieza y la llama.
   servidor.reiniciar = () => {
     guion = [];
     pedidos = [];
     cacheClaude = crearCacheClaude();
+    for (const c of conexionesVivo) c.ws.terminate();
+    conexionesVivo = [];
+    tokensVivo = new Map();
+  };
+  // Al cerrar el servidor también se sueltan los WebSockets (si no, `close` no termina).
+  const cerrarHttp = servidor.close.bind(servidor);
+  servidor.close = (...args) => {
+    for (const c of conexionesVivo) c.ws.terminate();
+    return cerrarHttp(...args);
   };
   return servidor;
 }

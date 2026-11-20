@@ -103,11 +103,12 @@ No hay variable para cargar en Vercel. **Cómo comprobar:** pedí el acceso desd
 
 | | |
 |---|---|
-| Variables | `GEMINI_API_KEY` (y opcionales `GEMINI_MODEL_CHAT`, `GEMINI_MODEL_FONDO`) |
+| Variables | `GEMINI_API_KEY` (y opcionales `GEMINI_MODEL_CHAT`, `GEMINI_MODEL_FONDO`, `GEMINI_MODEL_VIVO`) |
 | Dónde se consigue | aistudio.google.com → Get API key → Create API key, en un proyecto **sin facturación**. |
 | Dónde se carga | Vercel, como Sensitive. |
 | Modelos | Por defecto `gemini-3.6-flash` para conversar y `gemini-3.5-flash-lite` para resumir. En AI Studio (Rate limits) fijate qué modelos Flash y Flash-Lite figuran como gratuitos en tu proyecto y, si los nombres son otros, cargalos en las dos variables opcionales. |
-| Destraba | Chat, entrevista inicial, resúmenes y memorias. |
+| Llamadas en vivo | Usan la misma clave, con el modelo `gemini-3.8-live` (se cambia con `GEMINI_MODEL_VIVO`). También es gratuito, con su propio límite diario: se ve en AI Studio → Rate limits, en la fila del modelo «Live». Hace falta además la clave de servicio de Supabase. En el plan gratuito Google puede usar lo conversado para mejorar sus productos, igual que con el chat. |
+| Destraba | Chat, entrevista inicial, resúmenes, memorias y llamadas en vivo (hablarle encima al Agente, como por teléfono). |
 | Cómo comprobar | Configuración → Cerebro del Agente → «Gemini: Configurado». Después escribí «hola» en Agente. Si responde con error de modelo, el nombre del modelo no existe o no es gratuito: corregí las variables opcionales. |
 
 Ojo con el cupo: según reportes (no oficiales) los modelos Flash gratuitos tienen muy pocos pedidos por día. Por eso conviene cargar también Groq.

@@ -18,7 +18,12 @@ export async function proxy(request: NextRequest) {
   const esPublica = RUTAS_PUBLICAS.some((r) => pathname === r || pathname.startsWith(`${r}/`));
 
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
-  const csp = politicaDeContenido({ nonce, supabaseUrl: SUPABASE_URL, desarrollo: process.env.NODE_ENV === "development" });
+  const csp = politicaDeContenido({
+    nonce,
+    supabaseUrl: SUPABASE_URL,
+    desarrollo: process.env.NODE_ENV === "development",
+    geminiUrl: process.env.GEMINI_BASE_URL,
+  });
   const conCsp = <T extends NextResponse>(r: T): T => {
     r.headers.set("Content-Security-Policy", csp);
     return r;
