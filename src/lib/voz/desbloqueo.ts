@@ -10,6 +10,24 @@
 let vozDestrabada = false;
 let contexto: AudioContext | null = null;
 
+/**
+ * El contexto de audio de la página, el mismo que se habilita con cada toque.
+ * El medidor de volumen lo usa para que también le llegue esa habilitación:
+ * un contexto creado fuera de un toque puede quedar suspendido en iPhone, y
+ * un medidor suspendido no oye nada.
+ */
+export function contextoDeAudio(): AudioContext | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const Clase = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Clase) return null;
+    contexto ??= new Clase();
+    return contexto;
+  } catch {
+    return null;
+  }
+}
+
 export function desbloquearAudio(): void {
   if (typeof window === "undefined") return;
   try {
@@ -28,15 +46,15 @@ export function desbloquearAudio(): void {
     // Sin voz del navegador: no hay nada que destrabar.
   }
   try {
-    const Clase = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Clase) return;
-    contexto ??= new Clase();
-    if (contexto.state === "suspended") void contexto.resume();
+    const audio = contextoDeAudio();
+    if (!audio) return;
+    // «suspended» o, en iPhone, «interrupted» (otra cosa tomó el audio): se reanuda.
+    if (audio.state !== "running") void audio.resume().catch(() => null);
     // Un instante de silencio: con esto iOS da por habilitado el audio de la página.
-    const buffer = contexto.createBuffer(1, 1, 22050);
-    const fuente = contexto.createBufferSource();
+    const buffer = audio.createBuffer(1, 1, 22050);
+    const fuente = audio.createBufferSource();
     fuente.buffer = buffer;
-    fuente.connect(contexto.destination);
+    fuente.connect(audio.destination);
     fuente.start(0);
   } catch {
     // Sin Web Audio: sigue la voz del navegador.

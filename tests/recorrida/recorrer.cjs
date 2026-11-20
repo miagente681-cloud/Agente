@@ -591,6 +591,8 @@ async function main() {
     await conVoz.getByText("«Barrer el patio»: fecha límite →").waitFor();
     await conVoz.getByText("Hablando").waitFor();
     afirmar((await estado()).tasks.find((t) => t.id === paraLlamada.id).due_set_by === "agente", "lo que digo en la llamada actualiza el panel (fecha puesta por el Agente)");
+    await conVoz.getByText("Hablá cuando quieras: me callo al instante").waitFor();
+    ok("mientras el Agente habla, la pantalla dice que alcanza con hablar para interrumpirlo");
     // Hablar encima: el volumen del micrófono sube y se sostiene.
     await conVoz.evaluate(() => { window.__vozDePrueba.volumen = 0.4; });
     await conVoz.getByText("Te escucho").waitFor();
@@ -663,6 +665,13 @@ async function main() {
     await conVoz.goto(BASE + "/configuracion");
     await conVoz.getByText("Cupo agotado").waitFor();
     ok("la configuración muestra el uso del mes y el aviso de cupo");
+    await conVoz.getByLabel("Interrumpir al Agente hablando").selectOption("baja");
+    afirmar(await conVoz.evaluate(() => localStorage.getItem("miagente.voz.interrupcion")) === "baja",
+      "la sensibilidad para interrumpir hablando se elige en Configuración y queda en el dispositivo");
+    await conVoz.reload();
+    await conVoz.getByLabel("Interrumpir al Agente hablando").waitFor();
+    afirmar(await conVoz.getByLabel("Interrumpir al Agente hablando").inputValue() === "baja", "al volver, la sensibilidad elegida sigue ahí");
+    await conVoz.getByLabel("Interrumpir al Agente hablando").selectOption("normal");
     await conVoz.close();
 
     console.log("Llamadas programadas");

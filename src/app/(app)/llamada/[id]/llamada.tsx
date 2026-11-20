@@ -14,7 +14,8 @@ import { ControlLlamada, type EstadoLlamada } from "@/lib/voz/llamada";
 import { desbloquearAudio } from "@/lib/voz/desbloqueo";
 import { crearVozNavegador, navegadorEscucha } from "@/lib/voz/navegador";
 import type { ProveedorVoz, RespuestaToken } from "@/lib/voz/tipos";
-import { crearMonitor } from "@/lib/voz/volumen";
+import { leerSensibilidad, type Sensibilidad } from "@/lib/voz/deteccion";
+import { crearMonitor, type Monitor } from "@/lib/voz/volumen";
 
 type Sesion = { id: string; kind: string; status: string; scheduled_at: string | null; focus: string | null };
 type Pantalla =
@@ -40,6 +41,16 @@ const pedirToken = (): Promise<RespuestaToken> =>
 
 /** Gancho solo para las pruebas en navegador: un proveedor de voz de mentira. */
 type VozDePrueba = ProveedorVoz & { nivel?: () => number };
+
+/** Cada cuánto se mide el volumen del micrófono. */
+const MEDIR_CADA_MS = 40;
+/**
+ * Si el sistema corta el micrófono (en algunos teléfonos pasa al arrancar el
+ * reconocimiento de voz), se vuelve a pedir cuando hace falta: mientras el
+ * Agente piensa o habla. Con un mínimo entre intentos y un tope por llamada.
+ */
+const ENTRE_REAPERTURAS_MS = 3000;
+const MAX_REAPERTURAS = 30;
 const vozDePrueba = () => (window as unknown as { __vozDePrueba?: VozDePrueba }).__vozDePrueba ?? null;
 
 export function Llamada({ id }: { id: string }) {
@@ -52,6 +63,11 @@ export function Llamada({ id }: { id: string }) {
   const control = useRef<ControlLlamada | null>(null);
   const limpiezas = useRef<(() => void)[]>([]);
   const finTranscripcion = useRef<HTMLDivElement>(null);
+  // El aro que muestra que el micrófono te oye. Se mueve sin pasar por React (25 veces por segundo).
+  const aro = useRef<HTMLSpanElement>(null);
+  const monitor = useRef<Monitor | null>(null);
+  const reaperturas = useRef({ veces: 0, ultima: 0 });
+  const [sensibilidad, setSensibilidad] = useState<Sensibilidad>("normal");
 
   useEffect(() => {
     let vigente = true;
@@ -137,15 +153,42 @@ export function Llamada({ id }: { id: string }) {
     return { voz, aviso };
   }
 
-  /** Pide el micrófono y deja listo el medidor de volumen. Devuelve null si no hay permiso. */
-  async function abrirMicrofono(): Promise<{ mic: MediaStream; nivel: () => number } | null> {
+  /**
+   * Pide el micrófono y deja listo el medidor de volumen. Devuelve null si no
+   * hay permiso. La cancelación de eco es lo que deja interrumpir hablando: sin
+   * ella el micrófono oiría sobre todo al propio Agente.
+   */
+  async function abrirMicrofono(): Promise<{ mic: MediaStream; nivel: () => number | null } | null> {
     try {
-      const mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-      const monitor = crearMonitor(mic);
-      limpiezas.current.push(() => mic.getTracks().forEach((t) => t.stop()), monitor.cerrar);
-      return { mic, nivel: monitor.nivel };
+      const mic = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
+      const nuevo = crearMonitor(mic);
+      monitor.current = nuevo;
+      limpiezas.current.push(() => mic.getTracks().forEach((t) => t.stop()), () => nuevo?.cerrar());
+      return { mic, nivel: () => nuevo?.nivel() ?? null };
     } catch {
       return null;
+    }
+  }
+
+  /** Mide el volumen, deja que el control decida si es una interrupción y mueve el aro. */
+  function medir(c: ControlLlamada) {
+    const nivel = c.revisarVolumen();
+    if (aro.current) {
+      // De 0 a 0,15 de volumen, el aro crece hasta un 70 %.
+      const tamano = nivel === null ? 0 : Math.min(0.7, nivel * 4.5);
+      aro.current.style.transform = `scale(${1 + tamano})`;
+      aro.current.style.opacity = nivel !== null && nivel > 0.01 ? "1" : "0";
+    }
+    // Si el sistema cortó el micrófono del todo, no vuelve solo: se pide de nuevo
+    // cuando sirve para algo (mientras se escucha, el reconocimiento usa el suyo).
+    const r = reaperturas.current;
+    const haceFalta = c.estado.fase === "pensando" || c.estado.fase === "hablando";
+    if (haceFalta && monitor.current?.terminado() && r.veces < MAX_REAPERTURAS && Date.now() - r.ultima > ENTRE_REAPERTURAS_MS) {
+      reaperturas.current = { veces: r.veces + 1, ultima: Date.now() };
+      monitor.current = null;
+      void abrirMicrofono().then((abierto) => abierto && control.current === c && c.ponerNivel(abierto.nivel));
     }
   }
 
@@ -160,8 +203,10 @@ export function Llamada({ id }: { id: string }) {
     const prueba = vozDePrueba();
     let voz: ProveedorVoz;
     let aviso: string | null = null;
-    let nivel: (() => number) | undefined;
+    let nivel: (() => number | null) | undefined;
     let hayMicrofono = false;
+    const elegida = leerSensibilidad();
+    setSensibilidad(elegida);
 
     if (prueba) {
       voz = prueba;
@@ -181,6 +226,7 @@ export function Llamada({ id }: { id: string }) {
     const c: ControlLlamada = new ControlLlamada({
       voz,
       nivel,
+      sensibilidad: elegida,
       silenciado: !hayMicrofono,
       alCambiar: setEstado,
       // «Terminá la sesión»: el Agente se despide y la llamada se corta sola, como con el botón.
@@ -190,7 +236,7 @@ export function Llamada({ id }: { id: string }) {
     });
     control.current = c;
     setEstado({ ...c.estado, aviso });
-    const volumen = setInterval(() => c.revisarVolumen(), 60);
+    const volumen = setInterval(() => medir(c), MEDIR_CADA_MS);
     const uso = setInterval(reportarUso, 30_000);
     limpiezas.current.push(() => clearInterval(volumen), () => clearInterval(uso));
     // En una llamada o en la entrevista abre el Agente; en un chat de voz empieza la persona.
@@ -286,6 +332,8 @@ export function Llamada({ id }: { id: string }) {
   const fase = estado?.fase ?? "conectando";
   const silenciado = Boolean(estado?.silenciado);
   const esperando = fase === "escuchando";
+  // Con el micrófono andando y midiendo, alcanza con hablar para cortar al Agente.
+  const puedeInterrumpirHablando = conMicrofono && !silenciado && !estado?.sordo && sensibilidad !== "apagada";
   return (
     <div className={marco}>
       <header className="flex items-center justify-between gap-3">
@@ -294,31 +342,65 @@ export function Llamada({ id }: { id: string }) {
       </header>
 
       <div className="flex flex-col items-center gap-3 py-5">
-        <span
-          aria-hidden
-          className={`flex h-20 w-20 items-center justify-center rounded-full border-2 transition-colors ${
-            esperando && !silenciado
-              ? "border-ok bg-ok-suave"
-              : fase === "hablando"
-                ? "animate-pulse border-acento bg-acento-suave"
-                : "border-borde-fuerte bg-panel"
-          }`}
-        >
-          {silenciado ? <MicOff size={28} className="text-texto-3" /> : <Mic size={28} className={esperando ? "text-ok" : fase === "hablando" ? "text-acento" : "text-texto-3"} />}
+        <span className="relative flex h-20 w-20 items-center justify-center">
+          {/* Crece con tu voz: muestra que el micrófono te está oyendo, también mientras habla el Agente. */}
+          <span
+            ref={aro}
+            aria-hidden
+            className="absolute inset-0 rounded-full bg-ok/25 opacity-0 transition-[transform,opacity] duration-100 ease-out"
+          />
+          <span
+            aria-hidden
+            className={`relative flex h-20 w-20 items-center justify-center rounded-full border-2 transition-colors ${
+              esperando && !silenciado
+                ? "border-ok bg-ok-suave"
+                : fase === "hablando"
+                  ? "animate-pulse border-acento bg-acento-suave"
+                  : "border-borde-fuerte bg-panel"
+            }`}
+          >
+            {silenciado ? <MicOff size={28} className="text-texto-3" /> : <Mic size={28} className={esperando ? "text-ok" : fase === "hablando" ? "text-acento" : "text-texto-3"} />}
+          </span>
         </span>
         <p role="status" aria-live="polite" className="text-lg font-medium">
           {silenciado && esperando ? (conMicrofono ? "Micrófono silenciado" : "Escribí abajo") : FASE[fase]}
         </p>
-        {fase === "hablando" || fase === "pensando" ? (
-          <Boton tamano="sm" onClick={() => control.current?.interrumpir()}>
-            <Hand size={14} aria-hidden />
-            Interrumpir
-          </Boton>
-        ) : (
-          <span className="h-8 text-xs text-texto-3">
-            {esperando ? (silenciado ? "El Agente te responde hablando" : "Hablá o escribí cuando quieras") : ""}
-          </span>
-        )}
+        <div className="flex min-h-8 flex-col items-center justify-center gap-1.5">
+          {fase === "hablando" && puedeInterrumpirHablando ? (
+            <>
+              <span className="max-w-xs text-center text-xs text-texto-2">
+                {estado?.ecoFuerte
+                  ? "El micrófono me oye a mí: para interrumpirme hablá fuerte. Con auriculares anda mejor."
+                  : "Hablá cuando quieras: me callo al instante"}
+              </span>
+              <button
+                type="button"
+                onClick={() => control.current?.interrumpir()}
+                className="rounded-sm text-xs text-texto-3 underline underline-offset-2 hover:text-texto"
+              >
+                o tocá acá para interrumpir
+              </button>
+            </>
+          ) : fase === "hablando" || fase === "pensando" ? (
+            <>
+              <Boton tamano="sm" onClick={() => control.current?.interrumpir()}>
+                <Hand size={14} aria-hidden />
+                Interrumpir
+              </Boton>
+              {fase === "hablando" && conMicrofono && !silenciado ? (
+                <span className="max-w-xs text-center text-xs text-texto-3">
+                  {sensibilidad === "apagada"
+                    ? "La interrupción hablando está apagada en Configuración → Voz."
+                    : "Ahora no puedo oírte mientras hablo: tocá «Interrumpir»."}
+                </span>
+              ) : null}
+            </>
+          ) : (
+            <span className="text-xs text-texto-3">
+              {esperando ? (silenciado ? "El Agente te responde hablando" : "Hablá o escribí cuando quieras") : ""}
+            </span>
+          )}
+        </div>
       </div>
 
       {estado?.aviso ? (

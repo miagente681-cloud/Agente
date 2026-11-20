@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { EventoCliente } from "@/lib/agente/cliente";
 import { CUPOS_F0, cuposDe, evaluarCupo } from "@/lib/voz/cupo";
 import { ControlLlamada, type EstadoLlamada } from "@/lib/voz/llamada";
@@ -158,18 +158,22 @@ describe("control de la llamada", () => {
     await tic(); await tic(); await tic();
     expect(estado().fase).toBe("hablando");
 
-    // Un ruido corto no alcanza: tiene que sostenerse.
-    ponerNivel(0.3);
-    control.revisarVolumen(1000);
-    control.revisarVolumen(1200);
+    // Se mide cada 40 ms. Mientras solo habla el Agente, el micrófono casi no oye nada.
+    let t = 1000;
+    const medir = (nivel: number, veces: number) => {
+      ponerNivel(nivel);
+      for (let i = 0; i < veces; i++) control.revisarVolumen((t += 40));
+    };
+    medir(0.003, 30);
+    // Un ruido corto no alcanza.
+    medir(0.4, 2);
+    medir(0.003, 10);
     expect(estado().fase).toBe("hablando");
-    ponerNivel(0.01);
-    control.revisarVolumen(1250);
-    ponerNivel(0.3);
-    control.revisarVolumen(1300);
-    control.revisarVolumen(1600);
+    // La persona empieza a hablar (con las caídas normales entre sílabas): en un cuarto de segundo, corta.
+    medir(0.08, 2);
+    medir(0.005, 1);
     expect(estado().fase).toBe("hablando");
-    control.revisarVolumen(1660); // 360 ms seguidos por encima del umbral
+    medir(0.09, 3);
     await tic();
 
     expect(voz.callado).toBe(1);
@@ -178,6 +182,68 @@ describe("control de la llamada", () => {
     expect(voz.escuchando).toBe(true);
     await tic(); await tic(); await tic();
     expect(voz.dicho).toEqual(["Primera oración bastante larga."]); // nada más salió por el parlante
+  });
+
+  it("si no se puede medir el micrófono, lo avisa (queda el botón) y se recupera solo", async () => {
+    const voz = vozFalsa();
+    let estado!: EstadoLlamada;
+    let nivel: number | null = 0.003;
+    const control = new ControlLlamada({
+      voz,
+      nivel: () => nivel,
+      alCambiar: (e) => (estado = e),
+      async *turno() {
+        await tic();
+        yield { tipo: "texto", texto: "Una respuesta larga del Agente, para que siga hablando un buen rato." };
+      },
+    });
+    void control.empezar(true);
+    await tic(); await tic(); await tic();
+    expect(estado).toMatchObject({ fase: "hablando", sordo: false });
+    let t = 0;
+    const medir = (veces: number) => {
+      for (let i = 0; i < veces; i++) control.revisarVolumen((t += 40));
+    };
+    // El sistema silenció el micrófono: un instante no alarma, un segundo sí.
+    nivel = null;
+    medir(10);
+    expect(estado.sordo).toBe(false);
+    medir(20);
+    expect(estado.sordo).toBe(true);
+    // Sin medición no hay interrupción hablando, pero el botón sigue andando.
+    expect(estado.fase).toBe("hablando");
+    // Vuelve el micrófono: deja de avisar y se puede interrumpir hablando otra vez.
+    nivel = 0.003;
+    medir(1);
+    expect(estado.sordo).toBe(false);
+    medir(20);
+    nivel = 0.1;
+    medir(6);
+    await tic();
+    expect(estado.fase).toBe("escuchando");
+    expect(voz.callado).toBe(1);
+  });
+
+  it("con la interrupción apagada, hablar encima no corta; el botón sí", async () => {
+    const voz = vozFalsa();
+    let estado!: EstadoLlamada;
+    const control = new ControlLlamada({
+      voz,
+      nivel: () => 0.5,
+      sensibilidad: "apagada",
+      alCambiar: (e) => (estado = e),
+      async *turno() {
+        await tic();
+        yield { tipo: "texto", texto: "Una respuesta larga del Agente, para que siga hablando un buen rato." };
+      },
+    });
+    void control.empezar(true);
+    await tic(); await tic(); await tic();
+    for (let t = 0; t < 3000; t += 40) control.revisarVolumen(t);
+    expect(estado.fase).toBe("hablando");
+    control.interrumpir();
+    await tic();
+    expect(estado.fase).toBe("escuchando");
   });
 
   it("silenciado no escucha ni manda nada; al volver, sigue", async () => {
@@ -265,7 +331,7 @@ describe("control de la llamada", () => {
 
 describe("voz del navegador en iPhone", () => {
   /** speechSynthesis de mentira: `modo` decide si avisa que terminó, si nunca avisa o si está bloqueado. */
-  function instalar(modo: "normal" | "sin_aviso" | "bloqueado") {
+  function instalar(modo: "normal" | "sin_aviso" | "bloqueado" | "pegado") {
     const dichas: string[] = [];
     let hablando = false;
     const s = {
@@ -282,6 +348,8 @@ describe("voz del navegador en iPhone", () => {
         dichas.push(f.text);
         hablando = true;
         s.speaking = true;
+        // «pegado»: el teléfono nunca avisa que terminó y sigue diciendo que está hablando.
+        if (modo === "pegado") return;
         setTimeout(() => {
           hablando = false;
           s.speaking = false;
@@ -314,6 +382,25 @@ describe("voz del navegador en iPhone", () => {
       expect(dichas).toEqual(["Hola, ¿cómo venís?"]);
       expect(Date.now() - inicio).toBeLessThan(4000);
     } finally {
+      limpiar();
+    }
+  });
+
+  it("aunque el teléfono diga que sigue hablando para siempre, la frase se da por dicha", async () => {
+    const { crearVozNavegador, TOPE_BASE_MS, TOPE_POR_LETRA_MS } = await import("@/lib/voz/navegador");
+    instalar("pegado");
+    vi.useFakeTimers();
+    try {
+      const frase = "Una frase de cuarenta letras, más o menos.";
+      let dicha = false;
+      void crearVozNavegador().hablar(frase).then(() => (dicha = true));
+      const tope = TOPE_BASE_MS + frase.length * TOPE_POR_LETRA_MS;
+      await vi.advanceTimersByTimeAsync(tope - 500);
+      expect(dicha).toBe(false); // todavía puede estar hablando de verdad
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(dicha).toBe(true);
+    } finally {
+      vi.useRealTimers();
       limpiar();
     }
   });

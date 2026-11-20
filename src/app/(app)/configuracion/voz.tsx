@@ -7,6 +7,7 @@ import { estadoApp, type EstadoApp } from "@/lib/agente/cliente";
 import { useDatos } from "@/lib/datos/almacen";
 import { usePerfil } from "@/lib/datos/perfil";
 import { evaluarCupo } from "@/lib/voz/cupo";
+import { guardarSensibilidad, leerSensibilidad, SENSIBILIDADES, type Sensibilidad } from "@/lib/voz/deteccion";
 import { VOCES, VOZ_POR_DEFECTO } from "@/lib/voz/tipos";
 
 function Barra({ etiqueta, detalle, porcentaje }: { etiqueta: string; detalle: string; porcentaje: number }) {
@@ -28,10 +29,13 @@ export function ConfigVoz() {
   const { avisar } = useDatos();
   const { perfil, guardarConfig } = usePerfil();
   const [estado, setEstado] = useState<EstadoApp | null>(null);
+  // Se guarda en este dispositivo: cada micrófono y cada parlante son distintos.
+  const [sensibilidad, setSensibilidad] = useState<Sensibilidad | null>(null);
 
   useEffect(() => {
     let vigente = true;
     void estadoApp().then((e) => vigente && setEstado(e));
+    void Promise.resolve().then(() => vigente && setSensibilidad(leerSensibilidad()));
     return () => {
       vigente = false;
     };
@@ -54,6 +58,28 @@ export function ConfigVoz() {
           : "Azure Speech no está configurado: las llamadas usan el reconocimiento y la voz propios del navegador, que no tienen cupo pero suenan peor y no andan en todos los navegadores."}
       </p>
       <div className="flex flex-col gap-4">
+        <Campo
+          etiqueta="Interrumpir al Agente hablando"
+          htmlFor="voz-interrupcion"
+          ayuda="Mientras el Agente habla, si empezás a hablar se calla y te escucha. Vale para este dispositivo. Con auriculares anda mejor."
+        >
+          <Selector
+            id="voz-interrupcion"
+            value={sensibilidad ?? "normal"}
+            disabled={sensibilidad === null}
+            onChange={(e) => {
+              const nueva = e.target.value as Sensibilidad;
+              setSensibilidad(nueva);
+              guardarSensibilidad(nueva);
+            }}
+          >
+            {SENSIBILIDADES.map((x) => (
+              <option key={x.valor} value={x.valor}>
+                {x.nombre}
+              </option>
+            ))}
+          </Selector>
+        </Campo>
         <Campo etiqueta="Voz del Agente (Azure)" htmlFor="voz-agente" ayuda={estado?.azure ? undefined : "Se va a usar cuando configures Azure."}>
           <Selector
             id="voz-agente"

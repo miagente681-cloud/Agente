@@ -291,6 +291,25 @@ La persona pidió que el Agente pueda armar informes, gráficos y mediciones («
 | Tamaño de las herramientas | Para que `armar_informe` entre en los 7.000 caracteres (cupo de Groq), el esquema que ve el modelo ya no incluye largos mínimos y máximos ni la expresión regular cuando la descripción dice el formato. La validación no cambió. |
 | Seguridad | La tabla es de la persona (RLS «propio: todo»): no protege plata ni cupos. Como podría escribirla directo por la API, la app valida la forma de `datos` antes de mostrarlo. |
 
+## Interrumpir al Agente hablando, sin botón (pedido el 20/11/2026)
+
+La persona pidió que la charla de voz sea más fluida: que al hablar el Agente se calle solo, sin tener que tocar «Interrumpir» cada vez. Usa la app instalada en un iPhone, con la voz del navegador.
+
+La interrupción automática ya existía, pero casi nunca se disparaba: pedía un volumen alto (0,06) en **todas** las mediciones durante 350 ms seguidos, y el habla normal cae entre sílabas, así que cualquier caída reiniciaba la cuenta. Además el medidor usaba un contexto de audio propio, creado fuera de un toque, que en iPhone puede quedar suspendido (y un medidor suspendido mide cero).
+
+| Tema | Decisión |
+|---|---|
+| Detección | `src/lib/voz/deteccion.ts`, lógica pura con pruebas. Se mide cada 40 ms y alcanza con que el 60 % de las mediciones de los últimos 300 ms (y al menos cuatro) superen el umbral: corta a los 160 a 240 ms de empezar a hablar. Un golpe o una tos corta no alcanzan. Reemplaza la regla de 350 ms seguidos de la fase 5. |
+| Umbral | El mayor entre un mínimo fijo (0,022 de volumen eficaz en «Normal») y 1,7 veces lo que el micrófono oye del propio Agente. Ese eco se estima con lo medido mientras el Agente habla, con 400 ms de atraso para que la voz de la persona no suba la vara antes de ser detectada, y se recuerda de una frase a la siguiente. |
+| No cortarse solo | Donde el eco se cancela (teléfonos, auriculares) el umbral queda en el mínimo y es sensible. Donde no (una notebook con parlantes) hay que hablar más fuerte que el parlante, o usar el botón. Si el eco sube de golpe (suben el volumen), a lo sumo se corta solo dos veces y se adapta. La primera vez que habla el Agente en la llamada no se interrumpe en los primeros 600 ms: todavía no se sabe cuánto eco hay. |
+| Sensibilidad | Configuración → Voz → «Interrumpir al Agente hablando»: Normal, Más sensible, Menos sensible o Apagada. Se guarda en el dispositivo (`localStorage`), no en el perfil: depende del micrófono y del parlante de cada equipo. |
+| Medidor más firme | Usa el contexto de audio de la página, el mismo que se habilita con cada toque; si queda suspendido o interrumpido, intenta reanudarlo. Si el sistema silencia el micrófono devuelve «no puedo medir» en lugar de cero. Si lo corta del todo, la pantalla lo vuelve a pedir mientras el Agente piensa o habla (como mucho cada 3 segundos). |
+| Lo que se ve | Un aro verde alrededor del micrófono crece con la voz: muestra que la app oye, también mientras habla el Agente. Mientras habla dice «Hablá cuando quieras: me callo al instante» y deja un enlace chico para interrumpir a mano. Si no se puede medir, vuelve el botón «Interrumpir» con el aviso «Ahora no puedo oírte mientras hablo». Si el micrófono oye bastante al propio Agente (eco sin cancelar), lo dice: «para interrumpirme hablá fuerte; con auriculares anda mejor». |
+| Solo mientras habla | Mientras el Agente piensa no se interrumpe por volumen: un ruido en ese momento descartaría la respuesta sin que se note. Si la persona sigue hablando, se corta apenas el Agente arranca. |
+| Se siguen perdiendo las primeras sílabas | El reconocimiento de voz arranca recién al interrumpir (mientras habla el Agente está en pausa, porque en el teléfono no conviven). Conviene seguir la frase o repetir la primera palabra. |
+| «Hablando» no queda trabado | Si el teléfono nunca avisa que terminó una frase y además dice que sigue hablando, la frase se da por dicha a un tope según su largo (3 s más 130 ms por letra, el doble de lo que tarda). Antes quedaba en «Hablando» hasta tocar «Interrumpir». |
+| Sin probar en un iPhone | La lógica está probada con secuencias armadas y en la recorrida con un micrófono de mentira. No se pudo probar con un micrófono y un parlante reales: los umbrales salen de valores típicos y puede hacer falta ajustarlos con lo que la persona observe (para eso están el aro y la sensibilidad). |
+
 ## Despliegue
 
 - **Proyecto de Vercel `miagente`** (equipo MiAgente), enlazado a `miagente681-cloud/Agente`. El repo estaba vacío: el código de la fase 1 se trajo desde `Emontone21/MiAg` con su historial.

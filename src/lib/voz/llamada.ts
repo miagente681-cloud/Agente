@@ -1,7 +1,7 @@
 import type { Cambio, EventoCliente } from "@/lib/agente/cliente";
+import { DetectorDeVoz, type Sensibilidad } from "./deteccion";
 import { Segmentador } from "./oraciones";
 import type { ProveedorVoz } from "./tipos";
-import { SOSTENIDO_MS, UMBRAL_VOZ } from "./volumen";
 
 /**
  * El control de una llamada: quién habla, quién escucha y qué pasa cuando la
@@ -10,8 +10,9 @@ import { SOSTENIDO_MS, UMBRAL_VOZ } from "./volumen";
  *
  * Ciclo: escuchando → (la persona termina una frase) → pensando → hablando →
  * escuchando. Mientras el Agente piensa o habla, el reconocimiento está en
- * pausa (no se manda audio); la interrupción se detecta por el volumen del
- * micrófono y recién ahí se vuelve a escuchar.
+ * pausa (no se manda audio). Si la persona le habla encima, se nota por el
+ * volumen del micrófono (deteccion.ts): el Agente se calla en el acto y se
+ * vuelve a escuchar, sin que haya que tocar nada.
  */
 
 export type Fase = "conectando" | "escuchando" | "pensando" | "hablando" | "cerrada";
@@ -22,9 +23,20 @@ export type EstadoLlamada = {
   /** Lo que se va reconociendo mientras la persona habla. */
   parcial: string;
   silenciado: boolean;
+  /**
+   * Hay micrófono, pero en este momento no se puede medir su volumen (el
+   * sistema lo silenció o suspendió el audio): hablando no se puede
+   * interrumpir, queda el botón.
+   */
+  sordo: boolean;
+  /** El micrófono oye bastante al propio Agente: para interrumpirlo hay que hablar fuerte. */
+  ecoFuerte: boolean;
   motor: ProveedorVoz["id"];
   aviso: string | null;
 };
+
+/** Mediciones seguidas sin poder medir (más o menos un segundo) para avisar que no se oye. */
+const MEDICIONES_PARA_SORDO = 25;
 
 type PedirTurno = (pedido: { texto?: string; inicio?: boolean }, senal: AbortSignal) => AsyncGenerator<EventoCliente>;
 
@@ -35,7 +47,8 @@ export class ControlLlamada {
   private generacion = 0;
   private cola: Promise<void> = Promise.resolve();
   private pedido: AbortController | null = null;
-  private vozDesde: number | null = null;
+  private detector: DetectorDeVoz;
+  private sinMedir = 0;
   private n = 0;
 
   constructor(
@@ -43,8 +56,10 @@ export class ControlLlamada {
       voz: ProveedorVoz;
       turno: PedirTurno;
       alCambiar: (estado: EstadoLlamada) => void;
-      /** Volumen del micrófono (0 a 1), para detectar interrupciones. */
-      nivel?: () => number;
+      /** Volumen del micrófono (0 a 1), para detectar interrupciones. null: ahora no se puede medir. */
+      nivel?: () => number | null;
+      /** Cuánto hay que levantar la voz para interrumpir (lo elige la persona en Configuración). */
+      sensibilidad?: Sensibilidad;
       /** Empieza sin escuchar: la persona escribe (o no dio permiso de micrófono). */
       silenciado?: boolean;
       /** El Agente terminó la sesión a pedido: se llama cuando terminó de despedirse. */
@@ -52,14 +67,16 @@ export class ControlLlamada {
     },
   ) {
     this.voz = p.voz;
+    this.detector = new DetectorDeVoz(p.sensibilidad ?? "normal");
     this.estado = {
-      fase: "conectando", lineas: [], parcial: "", silenciado: Boolean(p.silenciado), motor: p.voz.id, aviso: null,
+      fase: "conectando", lineas: [], parcial: "", silenciado: Boolean(p.silenciado), sordo: false, ecoFuerte: false, motor: p.voz.id, aviso: null,
     };
   }
 
-  /** Conecta el medidor de volumen cuando el micrófono se activa a mitad de la sesión. */
-  ponerNivel(nivel: () => number): void {
+  /** Conecta el medidor de volumen cuando el micrófono se activa (o se vuelve a pedir) a mitad de la sesión. */
+  ponerNivel(nivel: () => number | null): void {
     this.p.nivel = nivel;
+    this.sinMedir = 0;
   }
 
   avisar(mensaje: string): void {
@@ -161,7 +178,6 @@ export class ControlLlamada {
     this.pedido?.abort();
     this.voz.callar();
     this.cola = Promise.resolve();
-    this.vozDesde = null;
   }
 
   /** La persona habló encima (o tocó «Interrumpir»): el Agente corta y escucha. */
@@ -172,20 +188,23 @@ export class ControlLlamada {
   }
 
   /**
-   * Se llama varias veces por segundo. Si mientras el Agente habla el volumen
-   * del micrófono se mantiene alto un rato, lo interrumpe.
+   * Se llama muchas veces por segundo con el reloj de la llamada. Si mientras
+   * el Agente habla la persona empieza a hablar, lo interrumpe. Devuelve el
+   * volumen medido (o null), para dibujarlo en pantalla.
    */
-  revisarVolumen(ahora: number = Date.now()): void {
-    if (this.estado.fase !== "hablando" || this.estado.silenciado || !this.p.nivel) {
-      this.vozDesde = null;
-      return;
+  revisarVolumen(ahora: number = Date.now()): number | null {
+    if (!this.p.nivel || this.estado.silenciado || this.estado.fase === "cerrada") {
+      this.detector.medir(null, ahora, false);
+      if (this.estado.sordo) this.poner({ sordo: false });
+      return null;
     }
-    if (this.p.nivel() < UMBRAL_VOZ) {
-      this.vozDesde = null;
-      return;
-    }
-    this.vozDesde ??= ahora;
-    if (ahora - this.vozDesde >= SOSTENIDO_MS) this.interrumpir();
+    const nivel = this.p.nivel();
+    this.sinMedir = nivel === null ? this.sinMedir + 1 : 0;
+    const sordo = this.sinMedir >= MEDICIONES_PARA_SORDO;
+    if (sordo !== this.estado.sordo) this.poner({ sordo });
+    if (this.detector.medir(nivel, ahora, this.estado.fase === "hablando")) this.interrumpir();
+    if (this.detector.ecoFuerte !== this.estado.ecoFuerte) this.poner({ ecoFuerte: this.detector.ecoFuerte });
+    return nivel;
   }
 
   silenciar(silenciado: boolean): void {

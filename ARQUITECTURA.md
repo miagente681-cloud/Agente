@@ -10,7 +10,7 @@ Este documento es el mapa del proyecto. Está pensado para que alguien (una pers
 | `README.md` | Presentación breve: para qué sirve y cómo se usa |
 | `.env.example` | Lista completa de variables, sin valores |
 
-Última actualización: 19/11/2026.
+Última actualización: 20/11/2026.
 
 ---
 
@@ -154,6 +154,9 @@ Claude es el único proveedor pago. Las reglas están en `claude/` y en `segurid
 - `tipos.ts` → `ProveedorVoz`: la interfaz. Dos implementaciones: `azure.ts` y `navegador.ts`.
 - `oraciones.ts`: corta el texto que llega en streaming en frases para decirlas a medida que llegan.
 - `desbloqueo.ts`: en iPhone el audio solo se habilita dentro de un toque. Hay que llamar a `desbloquearAudio()` de forma sincrónica en el manejador del toque, antes de cualquier `await`.
+- `deteccion.ts` → `DetectorDeVoz`: decide, mirando solo el volumen del micrófono, que la persona empezó a hablar encima del Agente (para interrumpirlo sin tocar nada). Lógica pura: tolera las caídas entre sílabas, mide cuánto del propio Agente entra por el micrófono para no cortarse solo, y tiene sensibilidad regulable (se guarda en el dispositivo).
+- `volumen.ts` → `crearMonitor()`: mide ese volumen con el contexto de audio de la página (el que se habilita con cada toque). Devuelve `null` cuando no puede medir (audio suspendido, micrófono silenciado por el sistema): la pantalla lo avisa y deja el botón «Interrumpir».
+- La pantalla mide cada 40 ms (`llamada.tsx` → `medir()`), mueve el aro que muestra que el micrófono oye y, si el sistema cortó el micrófono, lo vuelve a pedir.
 - Azure: el navegador pide un token corto a `/api/voice/token`. El cupo mensual es global para el despliegue y cada token descuenta un mínimo.
 
 ## 8. Programador: llamadas y recordatorios
@@ -259,6 +262,7 @@ Antes de subir un cambio tienen que pasar las cuatro cosas. Los servicios de men
 | Cambiar cómo se lee una tarea escrita en una línea (fecha, hora, prioridad) | `lib/datos/parsear-tarea.ts` (y sus pruebas en `tests/datos.test.ts`) |
 | Agregar un endpoint | `app/api/.../route.ts`: validar con `usuarioActual()`, y si gasta, `frenarSiHaceFalta()` con una clave nueva en `seguridad/frecuencia.ts` |
 | Sumar una integración con clave | Variable en `.env.example` y `CREDENCIALES.md`, entrada en `lib/integraciones.ts`, y que la función degrade si falta |
+| Cambiar cuándo se interrumpe al Agente al hablarle encima | `lib/voz/deteccion.ts` (umbrales, ventana, eco) y sus pruebas en `tests/deteccion.test.ts`. No se puede probar sin un micrófono real: después, probar en el teléfono |
 | Cambiar la voz | `lib/voz/` (`azure.ts` o `navegador.ts`); la lista de voces está en `tipos.ts` |
 
 ## 13. Despliegue y operación

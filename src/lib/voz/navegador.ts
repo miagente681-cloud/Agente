@@ -21,6 +21,13 @@ function claseReconocedor(): (new () => Reconocedor) | null {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
 }
 
+/**
+ * Tope de lo que puede durar una frase: la voz dice unas 15 letras por segundo
+ * (unos 65 ms por letra); se da el doble, más un margen para arrancar.
+ */
+export const TOPE_BASE_MS = 3000;
+export const TOPE_POR_LETRA_MS = 130;
+
 export const navegadorEscucha = () => claseReconocedor() !== null;
 export const navegadorHabla = () => typeof window !== "undefined" && "speechSynthesis" in window;
 
@@ -121,10 +128,15 @@ export function crearVozNavegador(opciones: { alBloqueado?: () => void } = {}): 
         s.resume();
         s.speak(frase);
         // En iPhone a veces nunca llega «terminó»: si ya no está sonando nada, se da por dicha.
+        // Y si el teléfono tampoco avisa que dejó de sonar, hay un tope según el largo
+        // de la frase (al doble de lo que tarda en decirse): la llamada nunca queda
+        // trabada en «hablando», esperando un toque en «Interrumpir».
         const desde = Date.now();
+        const tope = TOPE_BASE_MS + texto.length * TOPE_POR_LETRA_MS;
         reloj.id = setInterval(() => {
-          if (Date.now() - desde > 1500 && !s.speaking && !s.pending) terminar();
-        }, 500);
+          const pasado = Date.now() - desde;
+          if ((pasado > 1500 && !s.speaking && !s.pending) || pasado > tope) terminar();
+        }, 250);
       });
     },
 
