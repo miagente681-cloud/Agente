@@ -80,6 +80,8 @@ const SIN_RESPUESTA_MS = 25_000;
 const COLA_DE_INTERRUPCION_MS = 1500;
 /** Si el audio se termina sin que el servicio cierre el turno, se pasa a escuchar igual. */
 const HUECO_MS = 1500;
+/** Si pidió terminar y el Agente no dice nada más en este tiempo, la llamada se corta igual. */
+const ESPERA_DESPEDIDA_MS = 6000;
 const MEDICIONES_PARA_SORDO = 25;
 /** Trozos de micrófono (de unos 40 ms) que se guardan mientras se renueva la conexión: unos 4 segundos. */
 const MAX_AUDIO_EN_ESPERA = 100;
@@ -115,6 +117,8 @@ export class LlamadaEnVivo implements Control {
   private seVa = false;
   private relojSeVa: ReturnType<typeof setTimeout> | null = null;
   private relojHueco: ReturnType<typeof setTimeout> | null = null;
+  private relojDespedida: ReturnType<typeof setTimeout> | null = null;
+  private ultimoAudio = 0;
   private sinMedir = 0;
 
   constructor(private p: OpcionesVivo) {
@@ -341,6 +345,8 @@ export class LlamadaEnVivo implements Control {
 
   private recibir(e: EventoVivo): void {
     if (e.tipo === "dijiste") {
+      // La persona habló: lo que venga después ya responde a esto, no es resto del turno cortado.
+      this.descartando = false;
       const x = this.intercambio();
       const id = this.lineaVos(x);
       x.textoVos += e.texto;
@@ -349,6 +355,7 @@ export class LlamadaEnVivo implements Control {
       if (this.descartando) return;
       this.empezoAResponder();
       this.lineaAgente(this.intercambio());
+      this.ultimoAudio = Date.now();
       this.p.parlante.encolar(pcmAMuestras(deBase64(e.datos)), e.tasa);
       if (this.estado.fase !== "hablando") this.poner({ fase: "hablando" });
     } else if (e.tipo === "dice") {
@@ -445,7 +452,7 @@ export class LlamadaEnVivo implements Control {
       this.aplicando--;
       if (this.estado.fase === "cerrada") return;
       if (r?.cambios.length) this.editarLinea(linea, (l) => ({ ...l, cambios: [...l.cambios, ...r.cambios] }));
-      if (r?.terminar) this.pidioTerminar = true;
+      if (r?.terminar) this.terminarAlDespedirse();
       // Si mientras tanto se reconectó, esa llamada ya no existe para el servicio.
       if (conexion !== this.conexion) return;
       const respuestas = (r?.respuestas ?? llamadas.map((l) => ({ id: l.id, nombre: l.nombre, resultado: ERROR_AL_APLICAR })))
@@ -455,6 +462,21 @@ export class LlamadaEnVivo implements Control {
       // Desde acá le toca hablar al Agente: si no dice nada, se nota por el tope de espera.
       this.espera = { desde: Date.now(), por: "herramienta" };
     });
+  }
+
+  /**
+   * La persona pidió terminar. Lo normal es que el Agente se despida y la
+   * llamada se corte cuando termina de sonar; si ya se había despedido antes de
+   * pedir el cierre y no dice nada más, se corta igual a los pocos segundos.
+   */
+  private terminarAlDespedirse(): void {
+    this.pidioTerminar = true;
+    const desde = Date.now();
+    if (this.relojDespedida) clearTimeout(this.relojDespedida);
+    this.relojDespedida = setTimeout(() => {
+      if (this.estado.fase === "cerrada" || this.p.parlante.sonando || this.ultimoAudio > desde) return;
+      this.p.alTerminar?.();
+    }, ESPERA_DESPEDIDA_MS);
   }
 
   // --- Transcripción ---------------------------------------------------------------
@@ -531,7 +553,9 @@ export class LlamadaEnVivo implements Control {
   private limpiarRelojes(): void {
     if (this.relojSeVa) clearTimeout(this.relojSeVa);
     if (this.relojHueco) clearTimeout(this.relojHueco);
+    if (this.relojDespedida) clearTimeout(this.relojDespedida);
     this.relojSeVa = null;
     this.relojHueco = null;
+    this.relojDespedida = null;
   }
 }

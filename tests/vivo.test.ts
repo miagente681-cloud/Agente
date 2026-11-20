@@ -331,6 +331,55 @@ describe("control de la llamada en vivo", () => {
     expect(t.guardados[1]).toEqual({ agente: "Listo, la marqué como hecha." });
   });
 
+  it("como en el servicio real: el turno se cierra al pedir la herramienta y la respuesta llega en otro", async () => {
+    let soltar: (() => void) | null = null;
+    const t = armar({
+      guardar: (pedido) =>
+        pedido.llamadas
+          ? new Promise((listo) => {
+              soltar = () => listo({ respuestas: pedido.llamadas!.map((l) => ({ id: l.id, nombre: l.nombre, resultado: { ok: true } })), cambios: [], terminar: false });
+            })
+          : Promise.resolve({ respuestas: [], cambios: [], terminar: false }),
+    });
+    await t.conectar();
+    t.llega(dijiste("Creá el área Casa."), { toolCall: { functionCalls: [{ id: "f1", name: "crear_area", args: { nombre: "Casa" } }] } }, finTurno);
+    // El servicio ya cerró el turno, pero la herramienta sigue aplicándose: no es «Te escucho» todavía.
+    expect(t.c.estado.fase).toBe("pensando");
+    await vi.waitFor(() => expect(soltar).toBeTruthy());
+    soltar!();
+    await t.c.pendientes();
+    t.llega(audio, dice("Listo, creé el área Casa."), finTurno);
+    t.parlante.callar();
+    expect(t.c.estado.fase).toBe("escuchando");
+    expect(t.lineas()).toEqual(["vos: Creá el área Casa.", "agente: ", "agente: Listo, creé el área Casa."]);
+  });
+
+  it("si pidió terminar y el Agente ya se había despedido, la llamada se corta igual", async () => {
+    vi.useFakeTimers();
+    const alTerminar = vi.fn();
+    const t = armar({ alTerminar, resultados: [{ respuestas: [{ id: "f1", nombre: "terminar_sesion", resultado: { ok: true } }], cambios: [], terminar: true }] });
+    const pendiente = t.c.empezar(false);
+    await vi.advanceTimersByTimeAsync(0);
+    t.llega({ setupComplete: {} });
+    await pendiente;
+    t.llega(audio, dice("Dale, nos vemos."), { toolCall: { functionCalls: [{ id: "f1", name: "terminar_sesion", args: {} }] } }, finTurno);
+    t.parlante.callar();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(alTerminar).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(7000);
+    expect(alTerminar).toHaveBeenCalledOnce();
+  });
+
+  it("tras «Interrumpir», si hablo, la respuesta nueva suena aunque el servicio no avise el corte", async () => {
+    const t = armar();
+    await t.conectar();
+    t.llega(audio, dice("Tenés tres cosas"));
+    t.c.interrumpir();
+    t.llega(dijiste("¿Qué hora es?"), audio, dice("Las cinco."));
+    expect(t.parlante.cola).toBe(2);
+    expect(t.lineas().at(-1)).toBe("agente: Las cinco.");
+  });
+
   it("si no se pudo aplicar, el Agente se entera; si interrumpí antes, no se le responde", async () => {
     const t = armar({ resultados: [null, { respuestas: [{ id: "f2", nombre: "crear_area", resultado: { ok: true } }], cambios: [], terminar: false }] });
     await t.conectar();
