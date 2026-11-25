@@ -168,7 +168,7 @@ export function Paleta() {
               setIndice(0);
             }}
             onKeyDown={alTeclear}
-            className="h-11 w-full rounded-md border border-borde bg-elevado px-3 text-[15px] placeholder:text-texto-3 focus:border-acento focus:outline-none"
+            className="h-11 w-full rounded-md border border-borde bg-elevado px-3 text-[15px] placeholder:text-texto-3 focus:border-acento-texto focus:outline-none"
           />
           <ul id="paleta-opciones" role="listbox" aria-label="Resultados" className="flex flex-col">
             {opciones.map((o, i) => {
@@ -182,7 +182,7 @@ export function Paleta() {
                     onMouseMove={() => setIndice(i)}
                     className={`flex h-10 w-full items-center gap-3 rounded-md px-2.5 text-left text-sm ${i === elegida ? "bg-elevado text-texto" : "text-texto-2"}`}
                   >
-                    <I size={14} aria-hidden className={i === elegida ? "text-acento" : "text-texto-3"} />
+                    <I size={14} aria-hidden className={i === elegida ? "text-acento-texto" : "text-texto-3"} />
                     <span className="min-w-0 flex-1 truncate">{o.texto}</span>
                     {o.detalle ? <span className="shrink-0 text-xs text-texto-3">{o.detalle}</span> : null}
                   </button>

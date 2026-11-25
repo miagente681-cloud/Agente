@@ -61,7 +61,7 @@ export function DetalleSesion({ id }: { id: string }) {
   if (sesion === undefined) return <p className="text-sm text-texto-3">Cargando…</p>;
   if (sesion === null) {
     return (
-      <Vacio titulo="Esta sesión no existe" accion={<Link href="/sesiones" className="font-medium text-acento">Volver a Sesiones</Link>} />
+      <Vacio titulo="Esta sesión no existe" accion={<Link href="/sesiones" className="enlace">Volver a Sesiones</Link>} />
     );
   }
 
@@ -98,7 +98,7 @@ export function DetalleSesion({ id }: { id: string }) {
         <Tarjeta>
           <p className="text-sm text-texto-2">Esta sesión sigue abierta.</p>
           <div className="mt-3 flex gap-2">
-            <Link href={`/chat?sesion=${sesion.id}`} className="inline-flex h-10 items-center rounded-md bg-acento px-4 text-sm font-medium text-sobre-acento hover:bg-acento-fuerte">
+            <Link href={`/chat?sesion=${sesion.id}`} className="inline-flex h-10 items-center rounded-full bg-acento px-4 text-sm font-medium text-sobre-acento hover:bg-acento-fuerte">
               Seguir por chat
             </Link>
             <Boton onClick={generarResumen} disabled={generando}>

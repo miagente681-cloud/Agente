@@ -9,8 +9,9 @@ import { AltaRapida } from "@/components/tareas/alta-rapida";
 import { ListaTareas } from "@/components/tareas/fila-tarea";
 import { EncabezadoPagina, Vacio } from "@/components/ui/varios";
 import { porHoraDelDia, porPrioridad, useDatos, useTareasVisibles } from "@/lib/datos/almacen";
-import { domingoDe, fechaEnZona, fechaLarga, sumarDias } from "@/lib/datos/fechas";
+import { domingoDe, fechaEnZona, fechaLarga, lunesDe, sumarDias } from "@/lib/datos/fechas";
 import type { Tarea } from "@/lib/datos/tipos";
+import { ProximaLlamada } from "./proxima-llamada";
 
 type Rango = "hoy" | "semana";
 
@@ -26,8 +27,41 @@ function Seccion({ titulo, tono, tareas }: { titulo: string; tono?: "peligro"; t
   );
 }
 
+const LETRAS = ["L", "M", "M", "J", "V", "S", "D"];
+
+/** La semana en una tira: hoy resaltado, y un punto en los días que tienen tareas sin hacer. */
+function TiraSemana({ hoy, conTareas }: { hoy: string; conTareas: Set<string> }) {
+  const lunes = lunesDe(hoy);
+  return (
+    <ol aria-label="Esta semana" className="grid h-full grid-cols-7 content-center justify-items-center rounded-xl bg-panel px-2 pb-2 pt-2.5">
+      {LETRAS.map((letra, i) => {
+        const dia = sumarDias(lunes, i);
+        const esHoy = dia === hoy;
+        return (
+          <li key={dia} aria-current={esHoy ? "date" : undefined} className="flex flex-col items-center gap-1">
+            <span aria-hidden className={`text-[11px] font-semibold ${esHoy ? "text-texto" : "text-texto-3"}`}>
+              {letra}
+            </span>
+            <span
+              className={`cifra flex h-9 w-9 items-center justify-center rounded-full text-[1.35rem] ${
+                esHoy ? "bg-acento text-sobre-acento" : "text-texto-2"
+              }`}
+            >
+              <span className="sr-only">{fechaLarga(dia)}</span>
+              <span aria-hidden>{Number(dia.slice(8))}</span>
+            </span>
+            <span className={`h-1 w-1 rounded-full ${conTareas.has(dia) ? "bg-acento-texto" : ""}`}>
+              {conTareas.has(dia) ? <span className="sr-only">con tareas</span> : null}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 export function VistaHoy() {
-  const { estado, hoy, proyectos, entrevistaHecha } = useDatos();
+  const { estado, hoy, zona, proyectos, entrevistaHecha } = useDatos();
   const router = useRouter();
 
   // Cuenta nueva y vacía: se empieza por la bienvenida.
@@ -57,15 +91,22 @@ export function VistaHoy() {
     t.plan_fecha && t.plan_fecha > hoy && t.plan_fecha <= finSemana ? t.plan_fecha : t.due_date;
   const delDia = (d: string) =>
     abiertas.filter((t) => !yaListadas.has(t.id) && diaEnSemana(t) === d).sort(porHoraDelDia(d));
-  // completed_at es un instante; se compara con el día de hoy en la zona del
-  // dispositivo, que para "lo que hice hoy" es lo que la persona espera.
-  const zona = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  // completed_at es un instante: se lleva a la misma zona con la que se calcula
+  // «hoy» (la del perfil). Con otra, cerca de la medianoche lo recién hecho no aparecía.
   const hechasHoy = visibles.filter(
     (t) => t.status === "hecha" && t.completed_at && fechaEnZona(t.completed_at, zona) === hoy,
   );
 
   const dias: string[] = [];
   for (let d = sumarDias(hoy, 1); d <= finSemana; d = sumarDias(d, 1)) dias.push(d);
+
+  // Días de esta semana con algo sin hacer, para marcarlos en la tira.
+  const conTareas = new Set(
+    abiertas.flatMap((t) => {
+      const dia = t.plan_fecha ?? t.due_date;
+      return dia ? [dia] : [];
+    }),
+  );
 
   const nada =
     rango === "hoy"
@@ -80,8 +121,14 @@ export function VistaHoy() {
       ) : (
         <div className="flex flex-col gap-5">
           <EstadoLlamadas />
+          <div className="flex flex-col gap-2.5 md:flex-row md:items-stretch">
+            <div className="md:w-[26rem] md:shrink-0">
+              <TiraSemana hoy={hoy} conTareas={conTareas} />
+            </div>
+            <ProximaLlamada />
+          </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div role="tablist" aria-label="Rango" className="flex rounded-md border border-borde bg-panel p-0.5">
+            <div role="tablist" aria-label="Rango" className="flex rounded-full bg-panel p-1">
               {(["hoy", "semana"] as const).map((r) => (
                 <button
                   key={r}
@@ -89,8 +136,8 @@ export function VistaHoy() {
                   role="tab"
                   aria-selected={rango === r}
                   onClick={() => setRango(r)}
-                  className={`h-8 rounded-[5px] px-3 text-[13px] font-medium ${
-                    rango === r ? "bg-elevado text-texto" : "text-texto-2 hover:text-texto"
+                  className={`h-9 rounded-full px-3.5 text-[13px] font-medium ${
+                    rango === r ? "bg-acento text-sobre-acento" : "text-texto-2 hover:text-texto"
                   }`}
                 >
                   {r === "hoy" ? "Hoy" : "Esta semana"}
@@ -99,7 +146,7 @@ export function VistaHoy() {
               {/* En el celular el Calendario no entra en la barra de abajo: se llega desde acá. */}
               <Link
                 href="/calendario"
-                className="flex h-8 items-center rounded-[5px] px-3 text-[13px] font-medium text-texto-2 hover:text-texto md:hidden"
+                className="flex h-9 items-center rounded-full px-3.5 text-[13px] font-medium text-texto-2 hover:text-texto md:hidden"
               >
                 Mes
               </Link>

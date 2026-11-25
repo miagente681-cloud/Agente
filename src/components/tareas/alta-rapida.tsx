@@ -52,7 +52,7 @@ export function AltaRapida({
     return (
       <p className="rounded-md border border-dashed border-borde px-3.5 py-2.5 text-sm text-texto-2">
         Las tareas viven dentro de un proyecto.{" "}
-        <Link href="/proyectos" className="font-medium text-acento hover:text-acento-fuerte">
+        <Link href="/proyectos" className="enlace">
           Creá el primero
         </Link>
         .
@@ -98,7 +98,7 @@ export function AltaRapida({
           <Plus
             size={16}
             aria-hidden
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-texto-3"
+            className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-texto-2"
           />
           <label htmlFor={id} className="sr-only">
             Nueva tarea
@@ -110,7 +110,7 @@ export function AltaRapida({
             placeholder={marcador}
             autoComplete="off"
             enterKeyHint="done"
-            className="pl-9"
+            className="!rounded-full !border-[1.5px] !border-dotted !border-texto-3 !bg-transparent pl-10 focus:!border-solid focus:!border-acento-texto"
           />
         </div>
         {!proyectoFijo ? (
@@ -122,7 +122,7 @@ export function AltaRapida({
               id={`${id}-p`}
               value={proyectoId ?? ""}
               onChange={(e) => setElegido(e.target.value)}
-              className="!w-32 shrink-0 sm:!w-44"
+              className="!w-32 shrink-0 !rounded-full sm:!w-44"
             >
               {activos.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -134,10 +134,10 @@ export function AltaRapida({
         ) : null}
       </div>
       {pista.length ? (
-        <p className="pl-1 text-xs text-acento">{pista.join(" · ")}</p>
+        <p className="pl-4 text-xs font-medium text-acento-texto">{pista.join(" · ")}</p>
       ) : texto.trim() ? (
         // La ayuda aparece recién al escribir, para no ocupar lugar siempre.
-        <p className="pl-1 text-xs text-texto-3">
+        <p className="pl-4 text-xs text-texto-3">
           Enter para agregar. Podés terminar con: mañana, vie, 14/11, p1
         </p>
       ) : null}

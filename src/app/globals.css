@@ -1,45 +1,135 @@
 @import "tailwindcss";
 
 /*
- * Sistema de diseño de MiAgente.
- * Oscuro, un solo color de acento (ámbar) y jerarquía hecha con tipografía,
- * no con adornos. Los colores semánticos (vencido, hecho, bloqueado) se usan
- * solo para estado, nunca como decoración.
+ * Sistema de diseño de MiAgente: «Punto» con serif (elegido el 25/11/2026).
+ *
+ * - Dos temas, oscuro y claro. El tema va en <html data-tema="oscuro|claro|sistema">
+ *   (lo pone el servidor desde una cookie, ver src/lib/tema) y cambia los colores
+ *   de abajo. «sistema» sigue al teléfono o a la computadora.
+ * - Un solo color principal, que elige la persona en Configuración → Aspecto.
+ *   Llega como variables --acento-* sobre <html>; sin elegir, es el color del texto.
+ * - Mosaicos redondeados sin borde, separadores punteados, botones en píldora.
+ * - Títulos y números en serif (Instrument Serif); el resto en Inter.
+ * - Los colores de estado (vencido, hecho, bloqueado) se usan solo para estado.
+ *
+ * Los valores de @theme son los del tema oscuro. Si se cambia un color de texto
+ * o de fondo, tests/tema.test.ts comprueba que el contraste siga alcanzando.
  */
 @theme {
-  --color-fondo: #0c0c0e;        /* fondo de la app */
-  --color-panel: #141417;        /* barras, tarjetas */
-  --color-elevado: #1b1b20;      /* hover, campos, menús */
-  --color-borde: #26262c;
-  --color-borde-fuerte: #3a3a43;
+  --color-fondo: #000000;        /* fondo de la app */
+  --color-panel: #131313;        /* mosaicos, barras, tarjetas */
+  --color-elevado: #1f1f1f;      /* hover, campos, menús */
+  --color-borde: #2a2a2a;
+  --color-borde-fuerte: #3d3d3d;
 
-  --color-texto: #ededf0;        /* 15.9:1 sobre fondo */
-  --color-texto-2: #a5a5b0;      /* 7.9:1 */
-  --color-texto-3: #7d7d89;      /* 4.7:1 — mínimo para texto chico */
+  --color-texto: #f0f0f0;
+  --color-texto-2: #a6a6a6;
+  --color-texto-3: #8c8c8c;      /* mínimo para texto chico */
 
-  --color-acento: #f5a524;
-  --color-acento-fuerte: #ffb84d;
-  --color-acento-suave: #f5a52422;
-  --color-sobre-acento: #1a1204;
+  /* Color principal. «acento» es para rellenos (con «sobre-acento» encima);
+     «acento-texto» es el mismo color llevado a un tono que se lee sobre los fondos. */
+  --color-acento: #f0f0f0;
+  --color-acento-fuerte: #ffffff;
+  --color-acento-suave: #f0f0f01f;
+  --color-acento-texto: #f0f0f0;
+  --color-sobre-acento: #000000;
 
-  --color-peligro: #ff6b6b;
-  --color-peligro-suave: #ff6b6b1f;
+  --color-peligro: #ff6b5e;
+  --color-peligro-suave: #ff6b5e1f;
   --color-ok: #4cc38a;
   --color-ok-suave: #4cc38a1f;
   --color-aviso: #e0a84a;
   --color-info: #6ea8fe;
 
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-instrument), ui-serif, Georgia, serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 24px;
+  --radius-xl: 28px;
+}
+
+/* Tema oscuro (el de entrada): los colores de @theme, más el color principal elegido. */
+:root {
+  color-scheme: dark;
+  --color-acento: var(--acento-o, #f0f0f0);
+  --color-sobre-acento: var(--sobre-acento-o, #000000);
+  --color-acento-texto: var(--acento-texto-o, #f0f0f0);
+  --color-acento-suave: var(--acento-suave-o, #f0f0f01f);
+  --color-acento-fuerte: color-mix(in srgb, var(--color-acento) 86%, var(--color-texto));
+
+  /* Gráficos de los informes: los mismos colores validados de src/lib/informes/colores.ts. */
+  --grafico-serie1: #3987e5;
+  --grafico-serie2: #d95926;
+  --grafico-serie3: #199e70;
+  --grafico-grilla: #2a2a2a;
+  --grafico-eje: #3d3d3d;
+}
+
+/*
+ * Tema claro. Va dos veces con los mismos valores: cuando la persona lo eligió
+ * y cuando eligió «sistema» y el dispositivo está en claro. CSS no deja juntar
+ * las dos condiciones en una regla; tests/tema.test.ts comprueba que no se desfasen.
+ */
+:root[data-tema="claro"] {
+  color-scheme: light;
+  --color-fondo: #ededed;
+  --color-panel: #ffffff;
+  --color-elevado: #f4f4f4;
+  --color-borde: #dcdcdc;
+  --color-borde-fuerte: #bdbdbd;
+  --color-texto: #101010;
+  --color-texto-2: #555555;
+  --color-texto-3: #666666;
+  --color-acento: var(--acento-c, #101010);
+  --color-sobre-acento: var(--sobre-acento-c, #ffffff);
+  --color-acento-texto: var(--acento-texto-c, #101010);
+  --color-acento-suave: var(--acento-suave-c, #1010101a);
+  --color-peligro: #c4241a;
+  --color-peligro-suave: #c4241a1a;
+  --color-ok: #17794a;
+  --color-ok-suave: #17794a1a;
+  --color-aviso: #8a5a00;
+  --color-info: #1d5fd1;
+  --grafico-serie1: #2a78d6;
+  --grafico-serie2: #eb6834;
+  --grafico-serie3: #1baf7a;
+  --grafico-grilla: #e4e4e4;
+  --grafico-eje: #bdbdbd;
+}
+@media (prefers-color-scheme: light) {
+  :root[data-tema="sistema"] {
+    color-scheme: light;
+    --color-fondo: #ededed;
+    --color-panel: #ffffff;
+    --color-elevado: #f4f4f4;
+    --color-borde: #dcdcdc;
+    --color-borde-fuerte: #bdbdbd;
+    --color-texto: #101010;
+    --color-texto-2: #555555;
+    --color-texto-3: #666666;
+    --color-acento: var(--acento-c, #101010);
+    --color-sobre-acento: var(--sobre-acento-c, #ffffff);
+    --color-acento-texto: var(--acento-texto-c, #101010);
+    --color-acento-suave: var(--acento-suave-c, #1010101a);
+    --color-peligro: #c4241a;
+    --color-peligro-suave: #c4241a1a;
+    --color-ok: #17794a;
+    --color-ok-suave: #17794a1a;
+    --color-aviso: #8a5a00;
+    --color-info: #1d5fd1;
+    --grafico-serie1: #2a78d6;
+    --grafico-serie2: #eb6834;
+    --grafico-serie3: #1baf7a;
+    --grafico-grilla: #e4e4e4;
+    --grafico-eje: #bdbdbd;
+  }
 }
 
 @layer base {
   html {
-    color-scheme: dark;
     background: var(--color-fondo);
     -webkit-text-size-adjust: 100%;
   }
@@ -57,7 +147,7 @@
 
   /* Foco visible y parejo en toda la app: todo se puede usar con teclado. */
   :focus-visible {
-    outline: 2px solid var(--color-acento);
+    outline: 2px solid var(--color-acento-texto);
     outline-offset: 2px;
     border-radius: var(--radius-sm);
   }
@@ -78,17 +168,36 @@
 
 @layer components {
   .titulo-pagina {
-    font-size: 1.375rem;
-    line-height: 1.25;
-    font-weight: 600;
-    letter-spacing: -0.02em;
+    font-family: var(--font-serif);
+    font-size: 2.75rem;
+    line-height: 1;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+  }
+  /* Números y horas grandes, en la serif de los títulos. */
+  .cifra {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    line-height: 1;
+    letter-spacing: -0.01em;
   }
   .rotulo {
-    font-size: 0.75rem;
-    font-weight: 500;
-    letter-spacing: 0.04em;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--color-texto-3);
+  }
+  /* Enlace dentro de un texto. Va subrayado: sin color principal se vería igual que el resto. */
+  .enlace {
+    color: var(--color-acento-texto);
+    font-weight: 500;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+  .enlace:hover {
+    color: var(--color-texto);
   }
   .kbd {
     font-family: var(--font-mono);
@@ -97,5 +206,24 @@
     border: 1px solid var(--color-borde-fuerte);
     border-radius: 4px;
     color: var(--color-texto-2);
+  }
+  /* Trama de puntos del color principal (el círculo de la llamada). */
+  .trama-puntos {
+    background-image: radial-gradient(var(--color-acento-texto) 1.7px, transparent 2.2px);
+    background-size: 12px 12px;
+    background-position: center;
+  }
+  /*
+   * En el iPhone, con la app instalada, la hora y la batería se dibujan en
+   * blanco encima de la página. Esta franja negra queda detrás, para que se
+   * lean también con el tema claro. En el navegador mide cero y no se ve.
+   */
+  .franja-estado {
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: env(safe-area-inset-top);
+    background: #000000;
+    z-index: 60;
+    pointer-events: none;
   }
 }

@@ -5,7 +5,7 @@ import { useDatos } from "@/lib/datos/almacen";
 import { etiquetaFecha, etiquetaPlan } from "@/lib/datos/fechas";
 import type { Tarea } from "@/lib/datos/tipos";
 
-/** Casilla redonda para marcar una tarea como hecha. Área táctil de 40px. */
+/** Casilla redonda para marcar una tarea como hecha. Área táctil de 44px. */
 export function Casilla({ tarea }: { tarea: Tarea }) {
   const { editarTarea } = useDatos();
   const hecha = tarea.status === "hecha";
@@ -16,16 +16,16 @@ export function Casilla({ tarea }: { tarea: Tarea }) {
       aria-checked={hecha}
       aria-label={hecha ? `Marcar «${tarea.title}» como pendiente` : `Marcar «${tarea.title}» como hecha`}
       onClick={() => editarTarea(tarea.id, { status: hecha ? "pendiente" : "hecha" })}
-      className="group/casilla -m-2.5 flex h-10 w-10 shrink-0 items-center justify-center"
+      className="group/casilla -m-3 flex h-11 w-11 shrink-0 items-center justify-center"
     >
       <span
-        className={`flex h-[18px] w-[18px] items-center justify-center rounded-full border transition-colors ${
+        className={`flex h-5 w-5 items-center justify-center rounded-full border-[1.5px] transition-colors ${
           hecha
-            ? "border-ok bg-ok text-fondo"
-            : "border-borde-fuerte group-hover/casilla:border-texto-2"
+            ? "border-acento bg-acento text-sobre-acento"
+            : "border-texto-2 group-hover/casilla:border-texto"
         }`}
       >
-        {hecha ? <Check size={12} strokeWidth={3} aria-hidden /> : null}
+        {hecha ? <Check size={12} strokeWidth={3.5} aria-hidden /> : null}
       </span>
     </button>
   );
@@ -36,7 +36,7 @@ export function MarcaPrioridad({ prioridad }: { prioridad: number }) {
   if (prioridad === 2 || prioridad === 3) return null;
   return (
     <span
-      className={`font-mono text-[11px] font-medium ${prioridad === 1 ? "text-acento" : "text-texto-3"}`}
+      className={`font-mono text-[11px] font-medium ${prioridad === 1 ? "text-acento-texto" : "text-texto-3"}`}
       title={prioridad === 1 ? "Urgente" : "Prioridad baja"}
     >
       P{prioridad}
@@ -58,7 +58,7 @@ export function FechaLimite({ tarea, hoy }: { tarea: Tarea; hoy: string }) {
       {/* La chispa marca las fechas que propuso el Agente; las tuyas van sin marca. */}
       {tarea.due_set_by === "agente" ? (
         <>
-          <Sparkles size={11} aria-hidden className="text-acento" />
+          <Sparkles size={11} aria-hidden className="text-acento-texto" />
           <span className="sr-only">Sugerida por el Agente: </span>
         </>
       ) : null}
@@ -77,12 +77,13 @@ export function MarcaPlan({ tarea, hoy }: { tarea: Tarea; hoy: string }) {
   const texto = etiquetaPlan(tarea.plan_fecha, tarea.plan_hora, hoy);
   return (
     <span
-      className={`inline-flex items-center gap-1 whitespace-nowrap text-xs ${
-        atrasada ? "text-aviso" : esHoy ? "font-medium text-acento" : "text-texto-2"
+      className={`cifra inline-flex items-center gap-1 whitespace-nowrap text-[1.2rem] ${
+        atrasada ? "text-aviso" : esHoy ? "text-acento-texto" : "text-texto-2"
       }`}
       title={atrasada ? "La tenías planificada para un día que ya pasó" : "Cuándo la hacés"}
     >
-      <Clock size={11} aria-hidden />
+      {/* La hora va en la serif de los números; el reloj solo cuando no es para hoy. */}
+      {esHoy ? null : <Clock size={11} aria-hidden />}
       <span className="sr-only">La hacés: </span>
       {texto}
     </span>
@@ -127,7 +128,7 @@ export function FilaTarea({
 
   return (
     <li
-      className={`flex items-center gap-3 border-b border-borde py-2.5 last:border-b-0 ${sangria ? "pl-7" : ""}`}
+      className={`flex min-h-[3.25rem] items-center gap-3 border-b-[1.5px] border-dotted border-borde-fuerte py-2 last:border-b-0 ${sangria ? "pl-7" : ""}`}
     >
       <Casilla tarea={tarea} />
       <button
@@ -165,7 +166,7 @@ export function ListaTareas({
   mostrarProyecto?: boolean;
 }) {
   return (
-    <ul className="rounded-lg border border-borde bg-panel px-3.5">
+    <ul className="rounded-xl bg-panel px-4">
       {tareas.map((t) => (
         <FilaTarea key={t.id} tarea={t} mostrarProyecto={mostrarProyecto} />
       ))}

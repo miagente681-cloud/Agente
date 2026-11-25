@@ -224,8 +224,8 @@ export function Llamada({ id }: { id: string }) {
     if (!c) return;
     const nivel = c.revisarVolumen();
     if (aro.current) {
-      // De 0 a 0,15 de volumen, el aro crece hasta un 70 %.
-      const tamano = nivel === null ? 0 : Math.min(0.7, nivel * 4.5);
+      // De 0 a 0,15 de volumen, el aro crece hasta un 35 %.
+      const tamano = nivel === null ? 0 : Math.min(0.35, nivel * 2.3);
       aro.current.style.transform = `scale(${1 + tamano})`;
       aro.current.style.opacity = nivel !== null && nivel > 0.01 ? "1" : "0";
     }
@@ -489,7 +489,7 @@ export function Llamada({ id }: { id: string }) {
       <div className={marco}>
         <div className="m-auto flex max-w-sm flex-col items-center gap-4 text-center">
           <p className="text-texto-2">{pantalla.mensaje}</p>
-          <Link href="/hoy" className="font-medium text-acento hover:text-acento-fuerte">Volver</Link>
+          <Link href="/hoy" className="enlace">Volver</Link>
         </div>
       </div>
     );
@@ -513,7 +513,7 @@ export function Llamada({ id }: { id: string }) {
             <Keyboard size={16} aria-hidden />
             Sin micrófono: yo escribo, el Agente habla
           </Boton>
-          <button type="button" onClick={() => void pasarATexto()} className="rounded-sm text-sm text-texto-2 hover:text-texto">
+          <button type="button" onClick={() => void pasarATexto()} className="rounded-sm text-sm text-texto-2 underline underline-offset-[3px] hover:text-texto">
             Hacerla toda por escrito
           </button>
           {esChat ? (
@@ -529,41 +529,50 @@ export function Llamada({ id }: { id: string }) {
   const esperando = fase === "escuchando";
   // Con el micrófono andando y midiendo, alcanza con hablar para cortar al Agente.
   const puedeInterrumpirHablando = conMicrofono && !silenciado && !estado?.sordo && sensibilidad !== "apagada";
+  const rotuloBoton = "flex flex-col items-center gap-2 text-center text-[11px] font-semibold uppercase leading-tight tracking-[0.1em] text-texto-2";
   return (
     <div className={marco}>
-      <header className="flex items-center justify-between gap-3">
-        <p className="rotulo">{ROTULO[pantalla.sesion.kind] ?? "Llamada"}</p>
-        {estado ? <p className="text-xs text-texto-3">Voz: {MOTOR[estado.motor]}</p> : null}
+      <header className="flex min-h-11 items-center justify-between gap-3 px-1">
+        <p className="cifra text-[2rem]">{ROTULO[pantalla.sesion.kind] ?? "Llamada"}</p>
+        {estado ? (
+          <p className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-texto-2">
+            <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-acento" />
+            Voz: {MOTOR[estado.motor]}
+          </p>
+        ) : null}
       </header>
 
-      <div className="flex flex-col items-center gap-3 py-5">
-        <span className="relative flex h-20 w-20 items-center justify-center">
+      <div className="flex flex-col items-center gap-2 pb-3 pt-4">
+        <span className="relative flex h-40 w-40 items-center justify-center">
           {/* Crece con tu voz: muestra que el micrófono te está oyendo, también mientras habla el Agente. */}
           <span
             ref={aro}
             aria-hidden
-            className="absolute inset-0 rounded-full bg-ok/25 opacity-0 transition-[transform,opacity] duration-100 ease-out"
+            className="absolute inset-0 rounded-full bg-acento-suave opacity-0 transition-[transform,opacity] duration-100 ease-out"
           />
+          {/* El círculo de puntos late mientras habla el Agente y se apaga con el micrófono silenciado. */}
           <span
             aria-hidden
-            className={`relative flex h-20 w-20 items-center justify-center rounded-full border-2 transition-colors ${
-              esperando && !silenciado
-                ? "border-ok bg-ok-suave"
-                : fase === "hablando"
-                  ? "animate-pulse border-acento bg-acento-suave"
-                  : "border-borde-fuerte bg-panel"
-            }`}
+            className={`trama-puntos relative flex h-40 w-40 items-center justify-center rounded-full transition-opacity ${
+              fase === "hablando" ? "animate-pulse" : ""
+            } ${silenciado || fase === "conectando" ? "opacity-35" : ""}`}
           >
-            {silenciado ? <MicOff size={28} className="text-texto-3" /> : <Mic size={28} className={esperando ? "text-ok" : fase === "hablando" ? "text-acento" : "text-texto-3"} />}
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-fondo text-texto-2">
+              {silenciado ? (
+                <MicOff size={24} />
+              ) : (
+                <span className={`h-6 w-6 rounded-full ${esperando ? "bg-ok" : "bg-acento"}`} />
+              )}
+            </span>
           </span>
         </span>
-        <p role="status" aria-live="polite" className="text-lg font-medium">
+        <p role="status" aria-live="polite" className="cifra mt-2 text-center text-[2.9rem]">
           {silenciado && esperando ? (conMicrofono ? "Micrófono silenciado" : "Escribí abajo") : FASE[fase]}
         </p>
         <div className="flex min-h-8 flex-col items-center justify-center gap-1.5">
           {fase === "hablando" && puedeInterrumpirHablando ? (
             <>
-              <span className="max-w-xs text-center text-xs text-texto-2">
+              <span className="max-w-xs text-center text-sm text-texto-2">
                 {estado?.ecoFuerte
                   ? "El micrófono me oye a mí: para interrumpirme hablá fuerte. Con auriculares anda mejor."
                   : "Hablá cuando quieras: me callo al instante"}
@@ -591,7 +600,7 @@ export function Llamada({ id }: { id: string }) {
               ) : null}
             </>
           ) : (
-            <span className="text-xs text-texto-3">
+            <span className="text-sm text-texto-2">
               {esperando ? (silenciado ? "El Agente te responde hablando" : "Hablá o escribí cuando quieras") : ""}
             </span>
           )}
@@ -599,35 +608,47 @@ export function Llamada({ id }: { id: string }) {
       </div>
 
       {estado?.aviso ? (
-        <p role="alert" className="mb-3 flex items-start justify-between gap-3 rounded-md border border-aviso/40 bg-panel px-3 py-2 text-[13px] text-texto-2">
+        <p role="alert" className="mb-3 flex items-start justify-between gap-3 rounded-lg border-[1.5px] border-dotted border-aviso bg-panel px-4 py-2.5 text-[13px] text-texto-2">
           {estado.aviso}
-          <button type="button" onClick={() => control.current?.quitarAviso()} className="shrink-0 font-medium text-texto hover:underline">
+          <button type="button" onClick={() => control.current?.quitarAviso()} className="shrink-0 font-medium text-texto underline underline-offset-[3px]">
             Entendido
           </button>
         </p>
       ) : null}
 
-      <div className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-3 overflow-y-auto" aria-label="Transcripción">
-        {estado?.lineas.map((l) => (
-          <div key={l.id} className={`flex flex-col gap-1.5 ${l.quien === "vos" ? "items-end" : "items-start"}`}>
-            {l.texto ? (
-              <p className={l.quien === "vos" ? "max-w-[85%] rounded-2xl rounded-br-md bg-elevado px-3.5 py-2" : "max-w-[92%] whitespace-pre-wrap leading-relaxed"}>
-                {l.texto.trim()}
-              </p>
-            ) : null}
-            {l.cambios.map((c) => (
-              <div key={c.id || c.summary} className="w-full max-w-[92%]">
-                <TarjetaCambio cambio={c} />
-              </div>
-            ))}
+      {/* Lo conversado: un mosaico con renglones punteados, quién habló arriba de cada uno. */}
+      <div
+        className={`mx-auto w-full max-w-xl flex-1 overflow-y-auto rounded-xl px-[1.125rem] ${
+          estado?.lineas.length || estado?.parcial ? "bg-panel" : ""
+        }`}
+        aria-label="Transcripción"
+      >
+        {estado?.lineas.map((l) =>
+          l.texto || l.cambios.length ? (
+            <div key={l.id} className="flex flex-col gap-1.5 border-b-[1.5px] border-dotted border-borde-fuerte py-2.5 last:border-b-0">
+              {l.texto ? (
+                <>
+                  <p className="rotulo">{l.quien === "vos" ? "Vos" : "Agente"}</p>
+                  <p className="whitespace-pre-wrap text-base font-medium leading-snug">{l.texto.trim()}</p>
+                </>
+              ) : null}
+              {l.cambios.map((c) => (
+                <TarjetaCambio key={c.id || c.summary} cambio={c} />
+              ))}
+            </div>
+          ) : null,
+        )}
+        {estado?.parcial ? (
+          <div className="flex flex-col gap-1.5 py-2.5">
+            <p className="rotulo">Vos</p>
+            <p className="text-base leading-snug text-texto-2">{estado.parcial}</p>
           </div>
-        ))}
-        {estado?.parcial ? <p className="max-w-[85%] self-end rounded-2xl rounded-br-md border border-dashed border-borde px-3.5 py-2 text-texto-2">{estado.parcial}</p> : null}
+        ) : null}
         <div ref={finTranscripcion} />
       </div>
 
       {/* Siempre se puede escribir: con el micrófono apagado, o cuando no conviene hablar. */}
-      <form onSubmit={enviarTexto} className="mx-auto mt-3 flex w-full max-w-xl items-center gap-2 rounded-xl border border-borde-fuerte bg-elevado p-1.5">
+      <form onSubmit={enviarTexto} className="mx-auto mt-3 flex w-full max-w-xl items-center gap-2 rounded-full border-[1.5px] border-dotted border-texto-3 p-1 pl-2">
         <label htmlFor="texto-llamada" className="sr-only">
           Escribirle al Agente
         </label>
@@ -639,30 +660,32 @@ export function Llamada({ id }: { id: string }) {
           enterKeyHint="send"
           placeholder="O escribí acá…"
           onChange={(e) => setTexto(e.target.value)}
-          className="h-9 min-w-0 flex-1 bg-transparent px-2.5 text-[15px] placeholder:text-texto-3 focus:outline-none"
+          className="h-10 min-w-0 flex-1 bg-transparent px-2.5 text-[15px] placeholder:text-texto-3 focus:outline-none"
         />
-        <Boton type="submit" variante="primario" aria-label="Enviar" disabled={!texto.trim() || !estado} className="!h-9 !w-9 shrink-0 !rounded-lg !px-0">
+        <Boton type="submit" variante="primario" aria-label="Enviar" disabled={!texto.trim() || !estado} className="!h-10 !w-10 shrink-0 !px-0">
           <ArrowUp size={18} aria-hidden />
         </Boton>
       </form>
 
-      <div className="mx-auto mt-3 flex w-full max-w-xl items-center justify-center gap-3">
-        <Boton
-          className="!h-14 flex-1 !rounded-full"
-          aria-pressed={!silenciado}
-          onClick={() => void alternarMicrofono()}
-        >
-          {silenciado ? <MicOff size={18} aria-hidden /> : <Mic size={18} aria-hidden />}
+      <div className="mx-auto mt-4 grid w-full max-w-xl grid-cols-3 gap-2">
+        <button type="button" aria-pressed={!silenciado} onClick={() => void alternarMicrofono()} className={rotuloBoton}>
+          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-panel text-texto">
+            {silenciado ? <MicOff size={24} aria-hidden /> : <Mic size={24} aria-hidden />}
+          </span>
           {silenciado ? (conMicrofono ? "Activar" : "Usar micrófono") : "Silenciar"}
-        </Boton>
-        <Boton className="!h-14 flex-1 !rounded-full" onClick={() => void pasarATexto()}>
-          <MessageSquareText size={18} aria-hidden />
+        </button>
+        <button type="button" onClick={() => void pasarATexto()} className={rotuloBoton}>
+          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-panel text-texto">
+            <MessageSquareText size={24} aria-hidden />
+          </span>
           A texto
-        </Boton>
-        <Boton variante="peligro" className="!h-14 flex-1 !rounded-full" onClick={() => void cortar()}>
-          <PhoneOff size={18} aria-hidden />
+        </button>
+        <button type="button" onClick={() => void cortar()} className={rotuloBoton}>
+          <span className="flex h-16 w-16 items-center justify-center rounded-full bg-peligro text-fondo">
+            <PhoneOff size={24} aria-hidden />
+          </span>
           Cortar
-        </Boton>
+        </button>
       </div>
     </div>
   );

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { EncabezadoPagina } from "@/components/ui/varios";
 import { ConfigAgente } from "./agente";
+import { ConfigAspecto } from "./aspecto";
 import { Cuenta } from "./cuenta";
 import { ConfigDatos } from "./datos";
 import { ConfigLlamadas } from "./llamadas";
@@ -28,12 +29,13 @@ export default function Configuracion() {
             <Link
               key={m.href}
               href={m.href}
-              className="inline-flex h-9 items-center rounded-md border border-borde bg-panel px-3 text-[13px] font-medium text-texto-2 hover:border-borde-fuerte hover:text-texto"
+              className="inline-flex h-9 items-center rounded-full bg-panel px-3.5 text-[13px] font-medium text-texto-2 hover:bg-elevado hover:text-texto"
             >
               {m.nombre}
             </Link>
           ))}
         </nav>
+        <ConfigAspecto />
         <Cuenta />
         <ConfigAgente />
         <ConfigLlamadas />

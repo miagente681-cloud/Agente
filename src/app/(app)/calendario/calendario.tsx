@@ -312,7 +312,7 @@ export function Calendario() {
             </div>
             <DragOverlay>
               {flotante ? (
-                <span className="block max-w-48 truncate rounded border border-acento bg-elevado px-1.5 py-0.5 text-[11px] shadow-lg">
+                <span className="block max-w-48 truncate rounded border border-acento-texto bg-elevado px-1.5 py-0.5 text-[11px] shadow-lg">
                   {flotante.title}
                 </span>
               ) : null}

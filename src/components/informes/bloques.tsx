@@ -15,7 +15,7 @@ function Numero({ bloque }: { bloque: BloqueNumero }) {
   return (
     <div className={`${tarjeta} flex flex-col gap-1`}>
       <p className="text-[13px] text-texto-2">{bloque.titulo}</p>
-      <p className="text-[28px] font-semibold leading-tight tracking-tight">{valorDe(bloque)}</p>
+      <p className="cifra mt-1 text-[2.75rem]">{valorDe(bloque)}</p>
       {c ? (
         // El color acompaña al ícono y al texto; nunca es lo único que lo dice.
         <p className={`flex items-center gap-1 text-xs ${c.sentido === "bien" ? "text-ok" : c.sentido === "mal" ? "text-peligro" : "text-texto-3"}`}>

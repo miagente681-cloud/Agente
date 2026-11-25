@@ -18,6 +18,7 @@ Documentos:
 - **Degradación:** una integración sin su clave muestra «falta configurar»; nunca rompe la app.
 - **Base de datos:** cada cambio va en una migración nueva en `supabase/migrations/`. No editar las ya aplicadas. No borrar datos.
 - **Audio:** no generar audios con ElevenLabs para esta app.
+- **Aspecto:** colores, radios y tipografías salen de `src/app/globals.css`; en los componentes no se escriben colores sueltos. El color principal lo elige la persona y puede no haber ninguno: para rellenos, `bg-acento text-sobre-acento`; para texto, íconos y bordes, `acento-texto` (nunca `text-acento`). Todo tiene que verse bien en el tema oscuro y en el claro (ver sección 8 ter de `ARQUITECTURA.md`).
 
 ## Antes de subir un cambio
 

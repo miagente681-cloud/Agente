@@ -120,7 +120,7 @@ export function ConfigRecordatorios() {
                             void cambiar(r.id, { weekdays: elegido ? r.weekdays.filter((x) => x !== d.n) : [...r.weekdays, d.n].sort() })
                           }
                           className={`h-9 flex-1 rounded-md border text-[13px] font-medium ${
-                            elegido ? "border-acento/60 bg-acento-suave text-acento" : "border-borde text-texto-3 hover:text-texto"
+                            elegido ? "border-acento-texto/60 bg-acento-suave text-acento-texto" : "border-borde text-texto-3 hover:text-texto"
                           }`}
                         >
                           {d.corto}

@@ -21,7 +21,7 @@ export default async function Configurar() {
       <main className="mx-auto flex min-h-dvh max-w-xl flex-col gap-5 px-5 py-10">
         <h1 className="titulo-pagina">Estado de las integraciones</h1>
         <p className="text-sm text-texto-2">Esta página es solo para quien administra la app.</p>
-        <Link href="/hoy" className="self-start rounded-sm text-sm font-medium text-acento hover:text-acento-fuerte">
+        <Link href="/hoy" className="self-start rounded-sm text-sm enlace">
           Volver a la app
         </Link>
       </main>
@@ -76,7 +76,7 @@ export default async function Configurar() {
         ))}
       </ul>
       {supabaseConfigurado ? (
-        <Link href="/hoy" className="self-start rounded-sm text-sm font-medium text-acento hover:text-acento-fuerte">
+        <Link href="/hoy" className="self-start rounded-sm text-sm enlace">
           Volver a la app
         </Link>
       ) : null}

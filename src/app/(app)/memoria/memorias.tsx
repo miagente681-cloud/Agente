@@ -167,7 +167,7 @@ export function Memorias() {
             <Vacio
               titulo="Todavía no sé nada de vos"
               accion={
-                <Link href="/bienvenida" className="inline-flex h-10 items-center rounded-md bg-acento px-4 text-sm font-medium text-sobre-acento hover:bg-acento-fuerte">
+                <Link href="/bienvenida" className="inline-flex h-10 items-center rounded-full bg-acento px-4 text-sm font-medium text-sobre-acento hover:bg-acento-fuerte">
                   Hacer la entrevista inicial
                 </Link>
               }

@@ -37,12 +37,12 @@ export function BarraLateral() {
   return (
     <nav
       aria-label="Secciones"
-      className="sticky top-0 hidden h-dvh w-56 shrink-0 flex-col gap-0.5 border-r border-borde bg-panel p-3 md:flex"
+      className="sticky top-0 hidden h-dvh w-56 shrink-0 flex-col gap-1 border-r-[1.5px] border-dotted border-borde-fuerte p-3 md:flex"
     >
-      <Link href="/hoy" className="mb-4 flex items-center gap-2.5 rounded-md px-2 py-1.5">
+      <Link href="/hoy" className="mb-4 flex items-center gap-2.5 rounded-full px-2 py-1.5">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/iconos/icono.svg" alt="" width={24} height={24} />
-        <span className="font-semibold tracking-tight">MiAgente</span>
+        <span className="cifra text-[1.6rem]">MiAgente</span>
       </Link>
       {SECCIONES.map(({ href, nombre, icono: Icono }) => {
         const esActiva = activa(pathname, href);
@@ -51,13 +51,13 @@ export function BarraLateral() {
             key={href}
             href={href}
             aria-current={esActiva ? "page" : undefined}
-            className={`flex h-9 items-center gap-2.5 rounded-md px-2 text-sm transition-colors ${
+            className={`flex h-10 items-center gap-2.5 rounded-full px-3 text-sm transition-colors ${
               esActiva
-                ? "bg-elevado font-medium text-texto"
+                ? "bg-acento font-medium text-sobre-acento"
                 : "text-texto-2 hover:bg-elevado hover:text-texto"
             }`}
           >
-            <Icono size={16} strokeWidth={1.75} className={esActiva ? "text-acento" : ""} aria-hidden />
+            <Icono size={17} strokeWidth={1.75} aria-hidden />
             {nombre}
           </Link>
         );
@@ -69,30 +69,29 @@ export function BarraLateral() {
   );
 }
 
+/** En el celular: una píldora flotante con cinco íconos; el de la sección abierta va relleno. */
 export function BarraInferior() {
   const pathname = usePathname();
   const items = SECCIONES.filter((s) => s.movil);
   return (
     <nav
       aria-label="Secciones"
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-borde bg-panel/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 px-4 pb-[calc(0.625rem+env(safe-area-inset-bottom))] md:hidden"
     >
-      <ul className="mx-auto flex max-w-lg">
+      <ul className="pointer-events-auto mx-auto flex max-w-sm items-center justify-between rounded-full border border-borde bg-panel p-1.5 shadow-lg shadow-black/25">
         {items.map(({ href, nombre, icono: Icono }) => {
           const esActiva = activa(pathname, href);
           return (
-            <li key={href} className="flex-1">
+            <li key={href}>
               <Link
                 href={href}
                 aria-current={esActiva ? "page" : undefined}
-                className={`flex h-14 flex-col items-center justify-center gap-1 text-[11px] ${
-                  esActiva ? "text-acento" : "text-texto-3"
+                className={`flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
+                  esActiva ? "bg-acento text-sobre-acento" : "text-texto-2 hover:text-texto"
                 }`}
               >
-                <Icono size={20} strokeWidth={1.75} aria-hidden />
-                <span className={esActiva ? "font-medium" : ""}>
-                  {nombre === "Configuración" ? "Ajustes" : nombre}
-                </span>
+                <Icono size={22} strokeWidth={1.75} aria-hidden />
+                <span className="sr-only">{nombre === "Configuración" ? "Ajustes" : nombre}</span>
               </Link>
             </li>
           );

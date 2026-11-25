@@ -338,6 +338,28 @@ Después de publicar la interrupción por volumen, la persona la probó en su iP
 | Sin probar | **Un teléfono de verdad.** El micrófono, el parlante y la cancelación de eco del iPhone no se pueden probar desde acá: si el teléfono no cancela bien el eco, el Agente podría cortarse solo (para eso está la sensibilidad, y los auriculares lo evitan). Tampoco se conoce el límite diario gratuito del modelo en vivo: si se agota, la llamada pasa a turnos y queda anotado en los registros `[vivo]`. |
 | Mensajes de aviso que se corrigieron de paso | Los avisos del arranque de una llamada por turnos (sin permiso de micrófono, cupo de Azure) se pisaban con el primer cambio de estado y no llegaban a verse. Ahora se muestran. |
 
+## Aspecto nuevo: «Punto» con serif, tema oscuro o claro y color a elección (pedido el 24/11/2026)
+
+La persona pidió cambiar la estética: algo minimalista, con onda, y poder pasar de oscuro a claro. Se le mostraron maquetas en tres rondas (seis estilos; variantes de los dos que más le gustaron; y el elegido con seis tipografías) y eligió **5D-6: «Punto Ámbar» con serif**. Pidió además poder elegir el color principal dentro de la app y que no fuera siempre ámbar.
+
+| Tema | Decisión |
+|---|---|
+| Qué se tomó de la maqueta | Mosaicos redondeados sin borde sobre fondo negro (o gris claro), separadores punteados, botones y campos en píldora, casillas redondas, títulos y números en Instrument Serif, el resto en Inter. En Hoy: tira de la semana y mosaico de la próxima llamada relleno con el color principal. En la llamada: círculo de puntos, estado en serif grande y tres botones redondos. |
+| Color de entrada | **Sin color**: lo destacado va en el color del texto (blanco en oscuro, negro en claro). La persona pidió que no fuera ámbar y no dijo cuál; blanco y negro no choca con ningún color de estado y junta los dos estilos que más le gustaron. Se cambia en Configuración → Aspecto. |
+| Colores que se ofrecen | Sin color y diez colores (rojo, naranja, ámbar, lima, verde, turquesa, celeste, azul, violeta, rosa), más «Otro color» con el selector del sistema para elegir cualquiera. |
+| Cualquier color tiene que leerse | El color elegido se usa tal cual en los rellenos, con negro o blanco encima según cuál contraste más. Para texto, íconos y bordes se usa una versión aclarada (tema oscuro) u oscurecida (tema claro) lo justo para llegar a 4,5:1 sobre la superficie más difícil de cada tema. Está probado con colores difíciles (amarillo puro, blanco, negro, azul muy oscuro). |
+| Tema de entrada | Oscuro, que es como venía la app. Además hay claro y «automático» (sigue al dispositivo). El botón del encabezado alterna entre oscuro y claro; si estaba en automático, queda fijo en el contrario de lo que se veía. |
+| Dónde se guarda | En cookies del dispositivo, no en el perfil. Con cookies el servidor arma la página ya con el aspecto elegido y no hay un parpadeo del tema anterior al abrir; desde el perfil haría falta una consulta más en cada página o un script en línea. La contra: en otro dispositivo hay que elegirlo de nuevo. No protege plata ni cupos. |
+| Enlaces subrayados | Sin color principal, un enlace de color se vería igual que el texto: todos los enlaces dentro de un texto van subrayados. |
+| El color principal dejó de usarse como señal | Antes el ámbar marcaba cosas (prioridad P1, la hora de hoy, la chispa de las fechas del Agente). Como ahora puede no haber color, esas señales se apoyan también en el peso de la letra, el ícono o el texto. Lo hecho se marca con el color principal (antes verde); el verde queda para «te escucho» en la llamada y los avances. |
+| Tipografías propias | Los archivos de Inter e Instrument Serif (licencia OFL, incluida) están en el repositorio y los sirve la app: no hay pedidos a Google ni depende de la red al compilar. Inter reemplaza a Geist Sans, como en la maqueta elegida; Geist Mono queda para lo monoespaciado. Solo el juego latino (alcanza para español). |
+| Barra de abajo en el celular | Una píldora flotante con cinco íconos sin texto, como en la maqueta; la sección abierta va rellena. Los nombres siguen estando para lectores de pantalla. La contra: los íconos solos se descubren un poco menos. |
+| Mosaico «Próxima llamada» | Muestra la llamada ya creada para hoy o, si todavía no existe, la próxima según las rutinas (hasta una semana adelante). Con la hora cumplida cambia a «Tu Agente te está llamando» y ofrece «Atender». Sin rutinas no aparece (ahí ya avisa el cartel de siempre). El aviso flotante de llamada en espera se mantiene en todas las pantallas. |
+| iPhone con la app instalada | El sistema dibuja la hora y la batería en blanco encima de la página. Con el tema claro no se leerían: queda una franja negra detrás, del alto de esa zona. En el navegador no se ve. **Sin probar en un iPhone.** |
+| Gráficos | En el tema claro usan los colores que ya estaban validados para el PDF; en el oscuro, los de siempre. |
+| Error que apareció de paso | «Hechas hoy» comparaba la fecha con la zona horaria del dispositivo y «hoy» se calcula con la del perfil: cerca de la medianoche, o con el dispositivo en otra zona, lo recién hecho no aparecía. Ahora usan la misma. |
+| Cómo se revisó | Con capturas de la recorrida en un navegador de escritorio: ancho de computadora y de celular, tema oscuro y claro, con y sin color. No se vio en un teléfono de verdad. |
+
 ## Despliegue
 
 - **Proyecto de Vercel `miagente`** (equipo MiAgente), enlazado a `miagente681-cloud/Agente`. El repo estaba vacío: el código de la fase 1 se trajo desde `Emontone21/MiAg` con su historial.

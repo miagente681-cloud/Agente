@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { decirValor } from "@/lib/informes/calcular";
-import { TEMA_PANTALLA } from "@/lib/informes/colores";
+import { TEMA_SEGUN_TEMA } from "@/lib/informes/colores";
 import { escenaDe, graficoVacio, leyendaDe, type Escena } from "@/lib/informes/escena";
 import type { BloqueGrafico } from "@/lib/informes/tipos";
 
@@ -38,16 +38,16 @@ function Dibujo({
           width={escena.zonas[activa].ancho}
           height={escena.zonas[activa].alto}
           rx={4}
-          fill="#ffffff"
-          opacity={0.05}
+          fill="var(--color-texto)"
+          opacity={0.06}
         />
       ) : null}
       {escena.formas.map((f, i) => (
         <path
           key={i}
           d={f.d}
-          fill={f.relleno ? TEMA_PANTALLA[f.relleno] : "none"}
-          stroke={f.trazo ? TEMA_PANTALLA[f.trazo] : "none"}
+          // Como estilo y no como atributo: así valen las variables del tema.
+          style={{ fill: f.relleno ? TEMA_SEGUN_TEMA[f.relleno] : "none", stroke: f.trazo ? TEMA_SEGUN_TEMA[f.trazo] : "none" }}
           strokeWidth={f.grosor}
           strokeLinejoin="round"
           strokeLinecap="round"
@@ -60,8 +60,7 @@ function Dibujo({
           y={t.y}
           fontSize={t.tam}
           textAnchor={ANCLA[t.ancla]}
-          fill={TEMA_PANTALLA[t.tono]}
-          style={t.ancla === "inicio" ? undefined : { fontVariantNumeric: "tabular-nums" }}
+          style={{ fill: TEMA_SEGUN_TEMA[t.tono], ...(t.ancla === "inicio" ? {} : { fontVariantNumeric: "tabular-nums" }) }}
         >
           {t.texto}
         </text>
@@ -77,7 +76,7 @@ function Dibujo({
           tabIndex={0}
           role="img"
           aria-label={`${z.titulo}: ${z.filas.map((f) => `${f.nombre} ${f.valor}`).join(", ")}`}
-          className="cursor-default outline-none focus-visible:stroke-[var(--color-acento)] focus-visible:[stroke-width:2]"
+          className="cursor-default outline-none focus-visible:stroke-[var(--color-acento-texto)] focus-visible:[stroke-width:2]"
           onPointerEnter={() => alActivar(i)}
           onPointerDown={() => alActivar(i)}
           onFocus={() => alActivar(i)}
@@ -119,7 +118,7 @@ export function Grafico({ bloque }: { bloque: BloqueGrafico }) {
         {leyenda.length > 1 || zona
           ? leyenda.map((l, i) => (
               <span key={l.nombre} className="inline-flex items-center gap-1.5 text-texto-2">
-                <span aria-hidden className="h-2.5 w-2.5 rounded-[3px]" style={{ background: TEMA_PANTALLA[l.tono] }} />
+                <span aria-hidden className="h-2.5 w-2.5 rounded-[3px]" style={{ background: TEMA_SEGUN_TEMA[l.tono] }} />
                 {l.nombre}
                 {zona ? <strong className="font-semibold text-texto">{zona.filas[i]?.valor}</strong> : null}
               </span>

@@ -135,7 +135,7 @@ export function FormularioIngreso() {
         </Boton>
         <p className="text-center text-[13px] text-texto-2">
           {REGISTRO_ABIERTO ? "¿Primera vez, o te olvidaste la contraseña?" : "¿Todavía no tenés contraseña, o te la olvidaste?"}{" "}
-          <button type="button" onClick={() => cambiar("codigo")} className="rounded-sm font-medium text-acento hover:text-acento-fuerte">
+          <button type="button" onClick={() => cambiar("codigo")} className="rounded-sm enlace">
             Entrar con un código
           </button>
         </p>

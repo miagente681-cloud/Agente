@@ -398,7 +398,7 @@ export function ProveedorDatos({ children }: { children: ReactNode }) {
             {a.accion ? (
               <button
                 type="button"
-                className="font-medium text-acento hover:text-acento-fuerte"
+                className="enlace"
                 onClick={() => {
                   a.accion?.hacer();
                   setAvisos((lista) => lista.filter((x) => x.id !== a.id));

@@ -46,15 +46,15 @@ export function AvisoLlamada() {
       role="alert"
       className="fixed inset-x-0 top-0 z-40 flex justify-center px-3 pt-[calc(0.75rem+env(safe-area-inset-top))] md:left-56"
     >
-      <div className="flex w-full max-w-md items-center gap-3 rounded-xl border border-acento/50 bg-elevado py-2 pl-4 pr-2 shadow-xl shadow-black/50">
-        <Phone size={18} aria-hidden className="shrink-0 animate-pulse text-acento" />
+      <div className="flex w-full max-w-md items-center gap-3 rounded-full border border-borde-fuerte bg-elevado py-2 pl-5 pr-2 shadow-xl shadow-black/40">
+        <Phone size={18} aria-hidden className="shrink-0 animate-pulse text-acento-texto" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">Tu Agente te está llamando</p>
           {llamada.focus ? <p className="truncate text-xs text-texto-2">{llamada.focus}</p> : null}
         </div>
         <Link
           href={`/llamada/${llamada.id}`}
-          className="inline-flex h-10 shrink-0 items-center rounded-lg bg-acento px-4 text-sm font-medium text-sobre-acento hover:bg-acento-fuerte"
+          className="inline-flex h-11 shrink-0 items-center rounded-full bg-acento px-5 text-sm font-semibold text-sobre-acento hover:bg-acento-fuerte"
         >
           Atender
         </Link>

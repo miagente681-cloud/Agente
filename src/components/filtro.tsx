@@ -27,7 +27,7 @@ export function Filtro() {
             id="filtro-area"
             value={filtro.areaId ?? ""}
             onChange={(e) => cambiarFiltro({ areaId: e.target.value || null, proyectoId: null })}
-            className={`!h-8 !w-auto max-w-36 !text-[13px] ${filtro.areaId ? "!border-acento/60" : ""}`}
+            className={`!h-8 !w-auto max-w-36 !text-[13px] ${filtro.areaId ? "!border-acento-texto/60" : ""}`}
           >
             <option value="">Todas las áreas</option>
             {areas.map((a) => (
@@ -46,7 +46,7 @@ export function Filtro() {
         id="filtro-proyecto"
         value={filtro.proyectoId ?? ""}
         onChange={(e) => cambiarFiltro({ ...filtro, proyectoId: e.target.value || null })}
-        className={`!h-8 !w-auto max-w-44 !text-[13px] ${filtro.proyectoId ? "!border-acento/60" : ""}`}
+        className={`!h-8 !w-auto max-w-44 !text-[13px] ${filtro.proyectoId ? "!border-acento-texto/60" : ""}`}
       >
         <option value="">Todos los proyectos</option>
         {delArea.map((p) => (

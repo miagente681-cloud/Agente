@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
+import { BotonTema } from "@/components/tema/boton-tema";
 
 export function Tarjeta({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <section className={`rounded-lg border border-borde bg-panel p-4 sm:p-5 ${className}`}>
+    <section className={`rounded-xl bg-panel p-5 ${className}`}>
       {children}
     </section>
   );
@@ -11,7 +12,7 @@ export function Tarjeta({ children, className = "" }: { children: ReactNode; cla
 type Tono = "neutro" | "acento" | "peligro" | "ok";
 const tonos: Record<Tono, string> = {
   neutro: "bg-elevado text-texto-2",
-  acento: "bg-acento-suave text-acento",
+  acento: "bg-acento-suave text-acento-texto",
   peligro: "bg-peligro-suave text-peligro",
   ok: "bg-ok-suave text-ok",
 };
@@ -19,7 +20,7 @@ const tonos: Record<Tono, string> = {
 export function Etiqueta({ children, tono = "neutro" }: { children: ReactNode; tono?: Tono }) {
   return (
     <span
-      className={`inline-flex h-5 items-center rounded px-1.5 text-[11px] font-medium ${tonos[tono]}`}
+      className={`inline-flex h-5 items-center rounded-full px-2 text-[11px] font-medium ${tonos[tono]}`}
     >
       {children}
     </span>
@@ -37,7 +38,7 @@ export function Vacio({
   accion?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed border-borde px-5 py-8">
+    <div className="flex flex-col items-start gap-2 rounded-xl border-[1.5px] border-dotted border-borde-fuerte px-5 py-8">
       <p className="font-medium text-texto">{titulo}</p>
       {children ? <p className="max-w-prose text-sm text-texto-2">{children}</p> : null}
       {accion ? <div className="mt-2">{accion}</div> : null}
@@ -55,12 +56,16 @@ export function EncabezadoPagina({
   acciones?: ReactNode;
 }) {
   return (
-    <header className="mb-6 flex items-start justify-between gap-4">
-      <div>
+    <header className="mb-5 flex items-start justify-between gap-3">
+      <div className="min-w-0">
         <h1 className="titulo-pagina">{titulo}</h1>
-        {descripcion ? <p className="mt-1 text-sm text-texto-2">{descripcion}</p> : null}
+        {descripcion ? <p className="mt-1.5 text-sm text-texto-2">{descripcion}</p> : null}
       </div>
-      {acciones}
+      <div className="flex shrink-0 items-center gap-2">
+        {acciones}
+        {/* El cambio entre oscuro y claro está a mano en todas las pantallas. */}
+        <BotonTema />
+      </div>
     </header>
   );
 }

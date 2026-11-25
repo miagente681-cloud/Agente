@@ -38,16 +38,16 @@ export function TarjetaCambio({ cambio }: { cambio: CambioVista }) {
 
   return (
     <div
-      className={`flex items-center gap-2.5 rounded-md border border-borde bg-panel py-1.5 pl-3 pr-1.5 text-[13px] ${
+      className={`flex items-center gap-2.5 rounded-full border-[1.5px] border-dotted border-borde-fuerte py-1 pl-3.5 pr-1.5 text-[13px] ${
         deshecho ? "opacity-60" : ""
       }`}
     >
-      <Icono size={13} aria-hidden className="shrink-0 text-acento" />
+      <Icono size={13} aria-hidden className="shrink-0 text-acento-texto" />
       <span className={`min-w-0 flex-1 ${deshecho ? "line-through" : ""}`}>{cambio.summary}</span>
       {esInforme && !deshecho ? (
         <Link
           href={`/informes/${cambio.row_id}`}
-          className="flex h-8 shrink-0 items-center rounded-md bg-acento px-3 font-medium text-sobre-acento hover:bg-acento-fuerte"
+          className="flex h-8 shrink-0 items-center rounded-full bg-acento px-3 font-medium text-sobre-acento hover:bg-acento-fuerte"
         >
           Ver informe
         </Link>
@@ -59,7 +59,7 @@ export function TarjetaCambio({ cambio }: { cambio: CambioVista }) {
           type="button"
           onClick={deshacer}
           disabled={ocupado || !cambio.id}
-          className="flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-texto-2 hover:bg-elevado hover:text-texto disabled:opacity-50"
+          className="flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 font-medium text-acento-texto underline underline-offset-[3px] hover:bg-elevado hover:text-texto disabled:opacity-50"
         >
           <Undo2 size={13} aria-hidden />
           Deshacer

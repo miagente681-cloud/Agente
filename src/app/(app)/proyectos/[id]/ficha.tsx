@@ -42,7 +42,7 @@ export function FichaProyecto({ id }: { id: string }) {
       <Vacio
         titulo="Este proyecto no existe"
         accion={
-          <Link href="/proyectos" className="font-medium text-acento hover:text-acento-fuerte">
+          <Link href="/proyectos" className="enlace">
             Volver a Proyectos
           </Link>
         }
@@ -97,7 +97,7 @@ function Ficha({ proyecto }: { proyecto: Proyecto }) {
           onChange={(e) => setNombre(e.target.value)}
           onBlur={() => guardarTexto("name", nombre)}
           onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-          className="titulo-pagina -mx-2 rounded-md border border-transparent bg-transparent px-2 py-1 hover:border-borde focus:border-acento focus:outline-none"
+          className="titulo-pagina -mx-2 rounded-md border border-transparent bg-transparent px-2 py-1 hover:border-borde focus:border-acento-texto focus:outline-none"
         />
         <BarraProgreso hechas={hechas.length} total={principales.length} />
       </header>

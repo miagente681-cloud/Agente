@@ -39,7 +39,7 @@ function Tarjeta({ tarea, flotando = false }: { tarea: Tarea; flotando?: boolean
   return (
     <div
       className={`flex flex-col gap-1.5 rounded-md border bg-elevado px-3 py-2.5 text-left ${
-        flotando ? "border-acento shadow-xl shadow-black/50" : "border-borde hover:border-borde-fuerte"
+        flotando ? "border-acento-texto shadow-xl shadow-black/50" : "border-borde hover:border-borde-fuerte"
       }`}
     >
       <span className={`text-sm leading-snug ${tarea.status === "hecha" ? "text-texto-3 line-through" : ""}`}>
@@ -108,7 +108,7 @@ function Columna({ estado, nombre, tareas }: { estado: EstadoTarea; nombre: stri
         <ul
           ref={setNodeRef}
           className={`flex min-h-24 flex-1 flex-col gap-2 rounded-lg border p-2 transition-colors ${
-            isOver ? "border-acento/50 bg-acento-suave" : "border-borde bg-panel"
+            isOver ? "border-acento-texto/50 bg-acento-suave" : "border-borde bg-panel"
           }`}
         >
           {tareas.map((t) => (

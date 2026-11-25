@@ -31,6 +31,7 @@ Es multiusuario: cada persona ve solo lo suyo. Todos comparten las claves del de
 | Pieza | Qué se usa |
 |---|---|
 | App | Next.js 16 (App Router), React 19, Tailwind 4, TypeScript, zod 4 |
+| Aspecto | Sistema de diseño propio («Punto» con serif): tema oscuro y claro, color principal a elección, tipografías Instrument Serif e Inter servidas por la app (ver sección 8 ter) |
 | Base e ingreso | Supabase: Postgres con RLS, Auth (contraseña o código por correo), pg_cron + pg_net + Vault |
 | Hosting | Vercel (plan Hobby), proyecto `miagente`. Producción sale de la rama `claude/pensive-galileo-w7i9nk` |
 | Modelos | Claude (pago, con tope) → Gemini → Groq → Ollama (opcional). Orden configurable por persona |
@@ -73,6 +74,7 @@ src/
       vivo/                 Llamada en vivo: protocolo, audio, conexión, control y lado del servidor (ver sección 7)
     programacion/           horarios.ts (lógica pura) y tick.ts (lo que corre cada minuto)
     push/                   Suscripción (navegador), envío (servidor), lista de destinos válidos
+    tema/                   Aspecto: tema oscuro o claro y color principal (ver sección 8 ter)
     seguridad/              Correos permitidos, límite de frecuencia, cabeceras
     supabase/               Clientes: navegador, servidor (con la sesión) y admin (clave de servicio)
     integraciones.ts        Qué variables tiene cargadas el despliegue (solo sí o no)
@@ -210,6 +212,22 @@ Todo en `src/lib/informes/`. La regla: **los números los calcula la app, nunca 
 6. La pantalla (`app/(app)/informes/[id]`) valida la forma de lo guardado (`tipos.ts` → `DatosInforme`) y lo dibuja con `components/informes/`.
 7. `escena.ts` calcula la geometría de cada gráfico una sola vez; la dibujan el SVG de la pantalla (`grafico.tsx`) y el PDF (`pdf.ts`, con `pdf-lib`, en el navegador). Los colores están en `colores.ts` y están validados: no cambiarlos a ojo.
 
+## 8 ter. Aspecto: temas, color y tipografías
+
+El diseño se llama «Punto» con serif (lo eligió la persona entre maquetas el 25/11/2026): mosaicos redondeados sin borde, separadores punteados, botones en píldora, títulos y números en serif.
+
+- **Todo sale de `src/app/globals.css`.** Ahí están los colores de los dos temas, los radios, las tipografías y las clases propias (`titulo-pagina`, `cifra`, `rotulo`, `enlace`, `trama-puntos`). Los componentes usan esos nombres con Tailwind (`bg-panel`, `text-texto-2`, `rounded-xl`): **no se escriben colores sueltos en los componentes**.
+- **Tema:** `<html data-tema="oscuro|claro|sistema">`. Los valores de `@theme` son los del oscuro; el claro los pisa. El claro está dos veces en el CSS (elegido a mano, y «sistema» con el dispositivo en claro) porque CSS no deja juntar las dos condiciones; `tests/tema.test.ts` comprueba que las dos copias sean iguales y que todos los textos se lean sobre todas las superficies (4,5:1).
+- **Color principal:** lo elige la persona en Configuración → Aspecto, entre los de `ACENTOS` (`src/lib/tema/acento.ts`) o cualquier otro. De entrada no hay color: lo destacado va en el color del texto. Hay dos nombres y no son intercambiables:
+  - `acento` (con `sobre-acento` encima): para **rellenos**. Es el color tal cual.
+  - `acento-texto`: para **texto, íconos y bordes** sobre los fondos. Es el mismo color aclarado u oscurecido lo justo para leerse en cada tema (`derivarAcento()`); un amarillo sobre blanco no se lee.
+- **Dónde se guarda:** en dos cookies del dispositivo (`miagente-tema`, `miagente-acento`). El layout raíz (`src/app/layout.tsx`) las lee y arma `<html>` ya con el tema y las variables del color, así la página no parpadea con el aspecto anterior al abrir. En el navegador, `src/lib/tema/cliente.ts` (`aplicarTema`, `aplicarAcento`) cambia `<html>` al instante y reescribe la cookie. No protege nada: es solo cómo se ve.
+- **Cambiar de tema:** el botón redondo del encabezado de cada pantalla (`components/tema/boton-tema.tsx`, dentro de `EncabezadoPagina`) y la tarjeta Aspecto de Configuración.
+- **Enlaces:** van subrayados (clase `enlace`), porque sin color principal se verían igual que el texto.
+- **Tipografías:** archivos propios en `src/app/fuentes/` con `next/font/local` (no hay pedidos a Google). Instrument Serif para títulos y números (`font-serif`, clases `titulo-pagina` y `cifra`), Inter para el resto, Geist Mono para lo monoespaciado.
+- **Gráficos de los informes:** en pantalla usan variables de CSS (`--grafico-*`) con los dos juegos de colores ya validados (`TEMA_PANTALLA` para el oscuro, `TEMA_PAPEL` para el claro y el PDF).
+- **iPhone con la app instalada:** la hora y la batería se dibujan en blanco encima de la página. La clase `franja-estado` deja una franja negra detrás para que se lean también con el tema claro.
+
 ## 9. Endpoints
 
 Todos validan la sesión con `usuarioActual()` (JWT verificado). Los que gastan aplican `frenarSiHaceFalta()` (límite por minuto y por día; responde 429).
@@ -290,6 +308,9 @@ La llamada en vivo se prueba en ese navegador con un micrófono de mentira (el d
 | Agregar un endpoint | `app/api/.../route.ts`: validar con `usuarioActual()`, y si gasta, `frenarSiHaceFalta()` con una clave nueva en `seguridad/frecuencia.ts` |
 | Sumar una integración con clave | Variable en `.env.example` y `CREDENCIALES.md`, entrada en `lib/integraciones.ts`, y que la función degrade si falta |
 | Cambiar cuándo se interrumpe al Agente al hablarle encima | `lib/voz/deteccion.ts` (umbrales, ventana, eco) y sus pruebas en `tests/deteccion.test.ts`. No se puede probar sin un micrófono real: después, probar en el teléfono |
+| Cambiar un color, un radio o una tipografía de toda la app | `src/app/globals.css`. Después correr `npm test`: `tests/tema.test.ts` avisa si un texto deja de leerse o si las dos copias del tema claro quedaron distintas |
+| Sumar un color principal a los que se ofrecen | La lista `ACENTOS` en `src/lib/tema/acento.ts` |
+| Usar el color principal en un componente | Relleno: `bg-acento text-sobre-acento`. Texto, ícono o borde: `text-acento-texto` / `border-acento-texto`. Nunca `text-acento` |
 | Cambiar la voz | En vivo: la lista está en `lib/voz/vivo/tipos.ts` y se manda en `servidor.ts` → `ajustesVivo()`. Por turnos: `lib/voz/` (`azure.ts` o `navegador.ts`); la lista está en `tipos.ts` |
 | Cambiar el modelo o las instrucciones de la llamada en vivo | Modelo: variable `GEMINI_MODEL_VIVO`. Instrucciones y ajustes: `lib/voz/vivo/servidor.ts`. El formato de los mensajes: `protocolo.ts` |
 | Cambiar cómo reacciona la llamada en vivo (interrupción, reconexión, guardado) | `lib/voz/vivo/llamada.ts` y sus pruebas en `tests/vivo.test.ts`. Después, probar en el teléfono y mirar los registros `[vivo]` |
@@ -302,13 +323,14 @@ La llamada en vivo se prueba en ese navegador con un micrófono de mentira (el d
 - **Registros:** Vercel (plan Hobby) guarda solo la última hora. El servidor escribe líneas `[agente]` cuando un proveedor falla, `[claude]` por cada pedido (tokens y costo, sin datos de la persona) `[push]` cuando un aviso no se pudo entregar y `[vivo]` con lo que pasa en cada llamada en vivo (conexión, cortes, paso a turnos; sin nada de lo conversado).
 - **Costo:** todo es gratuito salvo Claude. No activar facturación en ningún otro proveedor.
 
-## 14. Estado y pendientes (20/11/2026)
+## 14. Estado y pendientes (25/11/2026)
 
 Funciona en producción: panel, ingreso con contraseña, chat con Gemini y Groq, chat de voz con la voz del navegador (también en iPhone), programador corriendo cada minuto, claves de push cargadas. La llamada en vivo quedó habilitada el 20/11 y comprobada contra el servicio real desde el servidor (conexión, voz, herramientas e interrupción; detalle en `DECISIONES.md`).
 
 Sin confirmar con servicios reales:
 
 - **La llamada en vivo en un teléfono:** micrófono, parlante y eco de verdad. Lo que pase queda en los registros `[vivo]` (Vercel guarda la última hora).
+- **El aspecto nuevo en un iPhone** (25/11): se revisó con capturas de un navegador de escritorio, en ancho de computadora y de celular, en los dos temas. Falta verlo en el teléfono, sobre todo la franja de arriba con la app instalada y el tema claro.
 
 - Claude en producción (la lista de correos permitidos se cargó; falta que la persona pruebe «Probar conexión»).
 - Una notificación push real en un teléfono, recordatorios incluidos. Desde el 17/11 se puede comprobar con «Recibir una llamada de prueba» en Configuración, y el resultado de cada envío queda en `push_subscriptions`.

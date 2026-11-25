@@ -82,7 +82,7 @@ export function ConfigClaude() {
         <p className="mt-1">
           Falta cargar la clave (<code className="font-mono text-[12px]">ANTHROPIC_API_KEY</code>). Mientras tanto el
           Agente usa los modelos gratuitos.{" "}
-          <Link href="/configurar" className="font-medium text-acento hover:text-acento-fuerte">
+          <Link href="/configurar" className="enlace">
             Ver qué falta
           </Link>
         </p>

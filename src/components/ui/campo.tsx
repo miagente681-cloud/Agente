@@ -7,9 +7,9 @@ import type {
 
 const estiloBase =
   "w-full rounded-md border border-borde bg-elevado px-3 text-[15px] text-texto " +
-  "placeholder:text-texto-3 hover:border-borde-fuerte focus:border-acento focus:outline-none " +
+  "placeholder:text-texto-3 hover:border-borde-fuerte focus:border-acento-texto focus:outline-none " +
   "disabled:opacity-60";
-const estiloCampo = `h-10 ${estiloBase}`;
+const estiloCampo = `h-11 ${estiloBase}`;
 
 /** Etiqueta + control + ayuda o error. La etiqueta siempre es visible. */
 export function Campo({

@@ -187,7 +187,7 @@ export function VistaInforme({ id }: { id: string }) {
           {fila.analisis ? (
             <section className="rounded-lg border border-borde bg-panel p-4 sm:p-5">
               <h2 className="rotulo mb-2 flex items-center gap-1.5">
-                <Sparkles size={12} aria-hidden className="text-acento" />
+                <Sparkles size={12} aria-hidden className="text-acento-texto" />
                 Lectura del Agente
               </h2>
               <p className="max-w-prose leading-relaxed">{fila.analisis}</p>

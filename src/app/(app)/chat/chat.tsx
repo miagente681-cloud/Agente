@@ -224,7 +224,7 @@ export function Chat() {
         <p className="mb-4 rounded-lg border border-aviso/40 bg-panel px-3.5 py-3 text-sm text-texto-2">
           <span className="font-medium text-aviso">Falta configurar el cerebro del Agente.</span> Cargá la clave de
           Gemini o de Groq y volvé a desplegar.{" "}
-          <Link href="/configurar" className="font-medium text-acento hover:text-acento-fuerte">
+          <Link href="/configurar" className="enlace">
             Ver qué falta
           </Link>
         </p>

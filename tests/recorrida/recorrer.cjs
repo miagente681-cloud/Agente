@@ -702,7 +702,12 @@ async function main() {
 
     const enVivo = await (await sembrar("sessions", { kind: "llamada_programada", channel: "voz", status: "notificada", scheduled_at: new Date().toISOString(), notified_at: new Date().toISOString(), focus: "Repaso en vivo", target_minutes: 5 })).json();
     const contextoVivo = await navegador.newContext({ viewport: { width: 420, height: 860 }, deviceScaleFactor: 1, permissions: ["microphone"] });
-    await contextoVivo.addCookies([{ ...cookieDeSesion(), url: BASE }]);
+    // Este dispositivo tiene elegido el tema claro y el rojo como color principal: así se ve la llamada.
+    await contextoVivo.addCookies([
+      { ...cookieDeSesion(), url: BASE },
+      { name: "miagente-tema", value: "claro", url: BASE },
+      { name: "miagente-acento", value: "f2473b", url: BASE },
+    ]);
     const pv = await contextoVivo.newPage();
     pv.on("pageerror", (x) => errores.push("en vivo: " + String(x)));
     pv.on("console", (m) => m.type() === "error" && errores.push("en vivo: " + m.text()));
@@ -905,8 +910,13 @@ async function main() {
     await pagina.getByText(/Tenés llamadas programadas, pero ningún dispositivo/).waitFor();
     ok("con rutinas y sin notificaciones activadas, Hoy avisa que las llamadas no van a llegar");
     await pagina.getByRole("alert").getByText("Tu Agente te está llamando").waitFor();
+    const mosaico = pagina.getByRole("region", { name: "Próxima llamada" });
+    await mosaico.getByRole("link", { name: "Atender" }).waitFor();
+    const textoMosaico = await mosaico.innerText();
+    afirmar(textoMosaico.includes(ahoraMvd) && textoMosaico.includes("Repaso breve del día") && /te está llamando/i.test(textoMosaico),
+      "Hoy destaca la próxima llamada con su hora y su foco, y deja atenderla cuando llegó la hora");
     await captura("18-aviso-llamada");
-    await pagina.getByRole("link", { name: "Atender" }).click();
+    await pagina.getByRole("alert").getByRole("link", { name: "Atender" }).click();
     await pagina.waitForURL(new RegExp(`/llamada/${programada.id}$`));
     await pagina.getByRole("button", { name: "Atender" }).waitFor();
     ok("dentro de la app aparece el aviso de llamada en espera y lleva a la llamada");
@@ -1089,6 +1099,81 @@ async function main() {
     await pm.getByText("Todavía no hay informes").waitFor();
     afirmar((await estado()).informes.length === 0, "un informe se borra desde su pantalla");
 
+    console.log("Aspecto: tema oscuro o claro y color principal");
+    await pagina.goto(BASE + "/hoy");
+    await pagina.getByRole("heading", { name: "Hoy", exact: true, level: 1 }).waitFor();
+    const aspecto = () => pagina.evaluate(() => {
+      const raiz = getComputedStyle(document.documentElement);
+      const activa = document.querySelector('nav a[aria-current="page"]');
+      return {
+        tema: document.documentElement.dataset.tema,
+        acento: raiz.getPropertyValue("--color-acento").trim(),
+        acentoTexto: raiz.getPropertyValue("--color-acento-texto").trim(),
+        fondo: getComputedStyle(document.body).backgroundColor,
+        seccionActiva: activa ? getComputedStyle(activa).backgroundColor : null,
+        titulo: getComputedStyle(document.querySelector("h1")).fontFamily,
+      };
+    });
+    // Los colores cambian con una transición corta: se espera a que queden en su valor final.
+    const cuandoSeVea = (condicion, texto) => hasta(async () => { const v = await aspecto(); return condicion(v) && v; }, texto, 5000);
+    let vista = await aspecto();
+    afirmar(vista.tema === "oscuro" && vista.fondo === "rgb(0, 0, 0)", "la app arranca en tema oscuro");
+    afirmar(vista.acento === "#f0f0f0" && vista.seccionActiva === "rgb(240, 240, 240)", `de entrada no hay color principal: lo destacado va en blanco, no en ámbar (${vista.acento})`);
+    afirmar(/Instrument/i.test(vista.titulo), `los títulos van en la tipografía con serif (${vista.titulo})`);
+    await pagina.getByRole("button", { name: "Cambiar entre tema oscuro y claro" }).click();
+    await cuandoSeVea((v) => v.tema === "claro" && v.fondo === "rgb(237, 237, 237)" && v.seccionActiva === "rgb(16, 16, 16)", "el botón del encabezado pasa al tema claro");
+    ok("el botón del encabezado pasa al tema claro sin recargar");
+    await captura("40-hoy-claro");
+    const htmlDelServidor = async () => (await (await pagina.request.get(BASE + "/hoy")).text()).match(/<html[^>]*>/)[0];
+    afirmar(/data-tema="claro"/.test(await htmlDelServidor()), "el tema elegido queda guardado: el servidor ya arma la página en claro (sin parpadeo al abrir)");
+    await pagina.goto(BASE + "/configuracion");
+    await pagina.getByRole("radio", { name: "Claro" }).waitFor();
+    afirmar(await pagina.getByRole("radio", { name: "Claro" }).getAttribute("aria-checked") === "true" && await pagina.getByRole("radio", { name: "Sin color" }).getAttribute("aria-checked") === "true",
+      "Configuración → Aspecto muestra el tema y el color elegidos");
+    await pagina.getByRole("radio", { name: "Azul" }).click();
+    await cuandoSeVea((v) => v.acento === "#3d6bff" && v.seccionActiva === "rgb(61, 107, 255)", "el color elegido se aplica");
+    ok("elijo el color principal y se aplica en toda la app sin recargar");
+    await captura("41-config-aspecto");
+    afirmar(/--acento-c:\s*#3d6bff/.test(await htmlDelServidor()), "el color elegido también queda guardado en el dispositivo");
+    // Un color que no se leería sobre fondo claro: los rellenos lo usan tal cual y los textos, oscurecido.
+    await pagina.getByLabel("Otro color").fill("#ffff00");
+    vista = await cuandoSeVea((v) => v.acento === "#ffff00", "el color elegido a mano se aplica");
+    afirmar(vista.acentoTexto !== "#ffff00", `puedo elegir cualquier otro color; si no se lee, los textos lo usan más oscuro (${vista.acentoTexto})`);
+    await pagina.getByRole("radio", { name: "Automático" }).click();
+    await cuandoSeVea((v) => v.tema === "sistema", "el tema automático se aplica");
+    ok("el tema también puede seguir al del dispositivo");
+    await pagina.getByRole("radio", { name: "Sin color" }).click();
+    await pagina.getByRole("radio", { name: "Oscuro" }).click();
+    await cuandoSeVea((v) => v.tema === "oscuro" && v.acento === "#f0f0f0", "vuelve al tema oscuro sin color");
+    afirmar(!/--acento-/.test(await htmlDelServidor()), "y puedo volver al tema oscuro sin color");
+
+    // En el celular: la barra de abajo es una píldora con íconos; la sección abierta va rellena.
+    const contextoMovil = await navegador.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+    await contextoMovil.addCookies([{ ...cookieDeSesion(), url: BASE }, { name: "miagente-acento", value: "2fbf71", url: BASE }]);
+    const enMovil = await contextoMovil.newPage();
+    enMovil.on("pageerror", (x) => errores.push("móvil: " + String(x)));
+    await enMovil.goto(BASE + "/hoy");
+    await enMovil.getByRole("heading", { name: "Hoy", exact: true, level: 1 }).waitFor();
+    await enMovil.getByRole("list", { name: "Esta semana" }).waitFor();
+    const barra = await enMovil.evaluate(() => {
+      // La barra lateral existe pero está oculta en el celular: se mira la que se ve.
+      const activa = [...document.querySelectorAll('nav[aria-label="Secciones"] a[aria-current="page"]')].find((x) => x.offsetParent !== null);
+      const desborda = document.documentElement.scrollWidth > document.documentElement.clientWidth;
+      return { fondo: activa ? getComputedStyle(activa).backgroundColor : null, nombre: activa?.textContent, desborda };
+    });
+    afirmar(barra.fondo === "rgb(47, 191, 113)" && barra.nombre === "Hoy" && !barra.desborda, `en el celular la barra de abajo marca la sección abierta con el color elegido, y nada se sale de la pantalla (${JSON.stringify(barra)})`);
+    await captura("42-hoy-movil-color", enMovil);
+    await enMovil.getByRole("link", { name: "Ajustes" }).click();
+    await enMovil.waitForURL(/\/configuracion$/);
+    await enMovil.getByRole("radio", { name: "Claro" }).click();
+    await enMovil.goto(BASE + "/hoy");
+    await enMovil.getByRole("list", { name: "Esta semana" }).waitFor();
+    await captura("43-hoy-movil-claro", enMovil);
+    await enMovil.goto(BASE + "/tablero");
+    await enMovil.getByRole("heading", { name: "Tablero", level: 1 }).waitFor();
+    await captura("44-tablero-movil-claro", enMovil);
+    await contextoMovil.close();
+
     console.log("Borrar todos mis datos");
     await pagina.goto(BASE + "/configuracion");
     await pagina.getByRole("button", { name: "Borrar todos mis datos" }).click();
@@ -1102,6 +1187,13 @@ async function main() {
     const reales = errores.filter((x) => !/favicon|sw\.js|Failed to load resource/.test(x));
     afirmar(reales.length === 0, "sin errores de JavaScript en la consola" + (reales.length ? ": " + reales.join(" | ") : ""));
     console.log(`\n${hechos.length} comprobaciones pasaron. Capturas en ${capturas}`);
+  } catch (error) {
+    // Para diagnosticar: cómo se veía cada pestaña abierta en el momento de la falla.
+    let n = 0;
+    for (const c of navegador.contexts()) {
+      for (const p of c.pages()) await p.screenshot({ path: path.join(capturas, `falla-${++n}.png`), fullPage: true }).catch(() => null);
+    }
+    throw error;
   } finally {
     await navegador.close();
     next.kill();

@@ -14,12 +14,30 @@ export const TEMA_PANTALLA: Record<Tono, string> = {
   serie1: "#3987e5",
   serie2: "#d95926",
   serie3: "#199e70",
-  grilla: "#26262c",
-  eje: "#3a3a43",
-  texto: "#ededf0",
-  texto2: "#a5a5b0",
-  tenue: "#7d7d89",
-  superficie: "#141417",
+  grilla: "#2a2a2a",
+  eje: "#3d3d3d",
+  texto: "#f0f0f0",
+  texto2: "#a6a6a6",
+  tenue: "#8c8c8c",
+  superficie: "#131313",
+};
+
+/**
+ * Lo que usa la pantalla: variables de CSS (definidas en globals.css), para
+ * que los gráficos sigan al tema. En el tema oscuro valen los colores de
+ * TEMA_PANTALLA y en el claro los de TEMA_PAPEL (los dos juegos validados);
+ * tests/tema.test.ts comprueba que globals.css no se desfase de estos.
+ */
+export const TEMA_SEGUN_TEMA: Record<Tono, string> = {
+  serie1: "var(--grafico-serie1)",
+  serie2: "var(--grafico-serie2)",
+  serie3: "var(--grafico-serie3)",
+  grilla: "var(--grafico-grilla)",
+  eje: "var(--grafico-eje)",
+  texto: "var(--color-texto)",
+  texto2: "var(--color-texto-2)",
+  tenue: "var(--color-texto-3)",
+  superficie: "var(--color-panel)",
 };
 
 export const TEMA_PAPEL: Record<Tono, string> = {

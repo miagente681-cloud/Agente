@@ -4,7 +4,7 @@ type Variante = "primario" | "secundario" | "fantasma" | "peligro";
 type Tamano = "sm" | "md";
 
 const base =
-  "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors " +
+  "inline-flex items-center justify-center gap-2 rounded-full font-medium transition-colors " +
   "disabled:opacity-50 disabled:pointer-events-none select-none whitespace-nowrap";
 
 const variantes: Record<Variante, string> = {
@@ -15,8 +15,8 @@ const variantes: Record<Variante, string> = {
 };
 
 const tamanos: Record<Tamano, string> = {
-  sm: "h-8 px-3 text-[13px]",
-  md: "h-10 px-4 text-sm", // 40px: cómodo para el dedo
+  sm: "h-9 px-3.5 text-[13px]",
+  md: "h-11 px-5 text-sm", // 44px: cómodo para el dedo
 };
 
 export function Boton({
