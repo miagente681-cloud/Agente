@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  closestCorners,
   DndContext,
   DragOverlay,
   KeyboardSensor,
@@ -25,12 +24,16 @@ import { AltaRapida } from "@/components/tareas/alta-rapida";
 import { CuentaSubtareas, FechaLimite, MarcaPlan, MarcaPrioridad } from "@/components/tareas/fila-tarea";
 import { EncabezadoPagina } from "@/components/ui/varios";
 import { useDatos, useTareasVisibles } from "@/lib/datos/almacen";
+import { dondeCae } from "@/lib/datos/arrastre";
 import { sumarDias } from "@/lib/datos/fechas";
 import { ordenEnPosicion } from "@/lib/datos/orden";
 import { ESTADOS_TAREA, type EstadoTarea, type Tarea } from "@/lib/datos/tipos";
 
 /** En "Hecha" solo se ve lo de las últimas dos semanas, para que no crezca sin fin. */
 const DIAS_HECHAS = 14;
+
+/** Cada columna es una zona donde soltar, con el estado como id. */
+const COLISION = dondeCae(ESTADOS_TAREA.map((e) => e.valor));
 
 function Tarjeta({ tarea, flotando = false }: { tarea: Tarea; flotando?: boolean }) {
   const { hoy, proyectos, areas } = useDatos();
@@ -196,7 +199,7 @@ export function Tablero() {
           </div>
           <DndContext
             sensors={sensores}
-            collisionDetection={closestCorners}
+            collisionDetection={COLISION}
             onDragStart={(e) => setArrastrada(String(e.active.id))}
             onDragCancel={() => setArrastrada(null)}
             onDragEnd={alSoltar}

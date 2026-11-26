@@ -374,6 +374,16 @@ La persona quería tocar un día de la tira de la semana (arriba en Hoy) y ver l
 | Cómo se marca | El día elegido va relleno con el color principal; hoy, cuando no es el elegido, queda con un aro. |
 | La tira sigue siendo una sola semana | No se puede pasar a la semana siguiente desde ahí: para eso está el Calendario. |
 
+## Arrastrar en el Tablero con muchas tarjetas (reportado el 26/11/2026)
+
+La persona no podía pasar tarjetas de Pendiente a En curso: al soltarlas volvían a su lugar. Pasaba con muchas tarjetas (en su Tablero había 20). Las columnas se estiran al alto de la más larga, y la regla que decidía dónde caía la tarjeta promediaba la distancia a las cuatro esquinas de cada zona: las esquinas de abajo de la columna vacía quedaban tan lejos que ganaba una tarjeta de Pendiente. Con pocas tarjetas (como en la recorrida) no se notaba.
+
+| Tema | Decisión |
+|---|---|
+| Regla nueva | Con mouse o dedo manda lo que está debajo del puntero: una tarjeta antes que su columna y, en la parte vacía, la columna (`lib/datos/arrastre.ts`). Con el teclado sigue la regla de las esquinas, que es la que esperan las flechas. |
+| Soltar fuera de las columnas | La tarjeta vuelve a su lugar. Es lo que se espera al soltar en ningún lado, y la columna se ilumina solo cuando la tarjeta está encima. |
+| Cómo se probó | Con el Tablero de verdad (compilado) y la base de mentira: con 3, 20 y 40 tarjetas pasa a En curso, y reordenar dentro de una columna sigue andando. Las pruebas de `tests/datos.test.ts` muestran que la regla vieja elegía una tarjeta de Pendiente y que la nueva elige la columna. No se sumó a la recorrida porque haría falta cargar decenas de tarjetas que cambiarían los pasos siguientes. |
+
 ## Despliegue
 
 - **Proyecto de Vercel `miagente`** (equipo MiAgente), enlazado a `miagente681-cloud/Agente`. El repo estaba vacío: el código de la fase 1 se trajo desde `Emontone21/MiAg` con su historial.

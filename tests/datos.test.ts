@@ -3,6 +3,8 @@ import {
   diaSemana, diferenciaDias, domingoDe, etiquetaFecha, fechaEnZona, fechaValida,
   grillaMes, lunesDe, sumarDias,
 } from "@/lib/datos/fechas";
+import { closestCorners, type CollisionDetection } from "@dnd-kit/core";
+import { dondeCae } from "@/lib/datos/arrastre";
 import { diaDeTarea, llamadasDelDia, tareasDelDia, type RutinaConId, type SesionDelDia } from "@/lib/datos/dia";
 import { ordenEnPosicion, ordenEntre } from "@/lib/datos/orden";
 import { parsearTarea } from "@/lib/datos/parsear-tarea";
@@ -217,5 +219,44 @@ describe("un día de la tira de Hoy", () => {
     expect(llamadasDelDia(sesiones, [rutina], "2026-11-27", HOY, ZONA)).toEqual([
       { id: "s4", hora: "18:00", foco: "Repaso", estado: "programada" },
     ]);
+  });
+});
+
+describe("dónde cae una tarjeta del Tablero", () => {
+  type Args = Parameters<CollisionDetection>[0];
+  const rect = (left: number, top: number, width: number, height: number) =>
+    ({ left, top, width, height, right: left + width, bottom: top + height });
+  // Dos columnas estiradas al alto de la más larga (20 tarjetas), con la de la izquierda llena.
+  const rects = new Map<string, ReturnType<typeof rect>>([
+    ["pendiente", rect(0, 0, 300, 1700)],
+    ["en_curso", rect(312, 0, 300, 1700)],
+  ]);
+  for (let i = 0; i < 20; i++) rects.set(`t${i}`, rect(8, 8 + i * 84, 284, 76));
+  const args = (puntero: { x: number; y: number } | null, arrastrada = rect(320, 10, 284, 76)): Args =>
+    ({
+      active: { id: "t0" },
+      collisionRect: arrastrada,
+      droppableRects: rects,
+      droppableContainers: [...rects.keys()].map((id) => ({ id })),
+      pointerCoordinates: puntero,
+    }) as unknown as Args;
+  const cae = dondeCae(["pendiente", "en_curso", "bloqueada", "hecha"]);
+
+  it("soltada arriba de una columna vacía y larga, cae en esa columna (antes volvía a su lugar)", () => {
+    // Lo que pasaba: por las esquinas de abajo, la columna vacía quedaba «lejos» y ganaba una tarjeta de Pendiente.
+    expect(String(closestCorners(args({ x: 460, y: 48 }))[0]?.id)).toMatch(/^t/);
+    expect(cae(args({ x: 460, y: 48 })).map((c) => c.id)).toEqual(["en_curso"]);
+  });
+
+  it("sobre una tarjeta cae en la tarjeta, no en su columna", () => {
+    expect(cae(args({ x: 150, y: 8 + 3 * 84 + 30 })).map((c) => c.id)).toEqual(["t3"]);
+  });
+
+  it("fuera de todas las columnas no cae en ninguna", () => {
+    expect(cae(args({ x: 900, y: 40 }))).toEqual([]);
+  });
+
+  it("con el teclado (sin puntero) sigue la esquina más cercana", () => {
+    expect(cae(args(null)).length).toBeGreaterThan(0);
   });
 });
