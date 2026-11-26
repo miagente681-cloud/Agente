@@ -3,8 +3,10 @@ import {
   diaSemana, diferenciaDias, domingoDe, etiquetaFecha, fechaEnZona, fechaValida,
   grillaMes, lunesDe, sumarDias,
 } from "@/lib/datos/fechas";
+import { diaDeTarea, llamadasDelDia, tareasDelDia, type RutinaConId, type SesionDelDia } from "@/lib/datos/dia";
 import { ordenEnPosicion, ordenEntre } from "@/lib/datos/orden";
 import { parsearTarea } from "@/lib/datos/parsear-tarea";
+import type { Tarea } from "@/lib/datos/tipos";
 
 describe("fechas", () => {
   it("el día depende de la zona del perfil, no de UTC", () => {
@@ -144,5 +146,76 @@ describe("alta de tarea en una línea", () => {
 
   it("una sola palabra nunca se interpreta como marca", () => {
     expect(parsearTarea("mañana", hoy)).toEqual({ titulo: "mañana", due_date: null, priority: null, plan_hora: null });
+  });
+});
+
+describe("un día de la tira de Hoy", () => {
+  const ZONA = "America/Montevideo";
+  const HOY = "2026-11-26"; // jueves
+  const tarea = (t: Partial<Tarea> & { id: string }): Tarea =>
+    ({
+      title: t.id,
+      status: "pendiente",
+      due_date: null,
+      plan_fecha: null,
+      plan_hora: null,
+      completed_at: null,
+      ...t,
+    }) as Tarea;
+
+  it("cada tarea cae el día que la hacés; si no lo elegiste, el de su fecha límite", () => {
+    const tareas = [
+      tarea({ id: "vence-vie", due_date: "2026-11-27" }),
+      tarea({ id: "hago-mie-vence-vie", plan_fecha: "2026-11-25", due_date: "2026-11-27" }),
+      tarea({ id: "sin-fecha" }),
+    ];
+    expect(diaDeTarea(tareas[1])).toBe("2026-11-25");
+    expect(tareasDelDia(tareas, "2026-11-27", ZONA).pendientes.map((t) => t.id)).toEqual(["vence-vie"]);
+    expect(tareasDelDia(tareas, "2026-11-25", ZONA).pendientes.map((t) => t.id)).toEqual(["hago-mie-vence-vie"]);
+  });
+
+  it("lo hecho cuenta el día en que se hizo, en la zona del perfil", () => {
+    const tareas = [
+      // 01:30 UTC del 25 todavía es el 24 en Montevideo.
+      tarea({ id: "noche", status: "hecha", completed_at: "2026-11-25T01:30:00Z", due_date: "2026-11-25" }),
+      tarea({ id: "tarde", status: "hecha", completed_at: "2026-11-25T18:00:00Z" }),
+    ];
+    expect(tareasDelDia(tareas, "2026-11-24", ZONA).hechas.map((t) => t.id)).toEqual(["noche"]);
+    expect(tareasDelDia(tareas, "2026-11-25", ZONA).hechas.map((t) => t.id)).toEqual(["tarde"]);
+    // Hecha, ya no está pendiente en su fecha límite.
+    expect(tareasDelDia(tareas, "2026-11-25", ZONA).pendientes).toEqual([]);
+  });
+
+  const rutina: RutinaConId = { id: "r1", weekdays: [1, 2, 3, 4, 5], local_time: "16:30:00", focus: "Repaso", active: true };
+
+  it("un día que viene muestra las llamadas que van a salir de las rutinas", () => {
+    expect(llamadasDelDia([], [rutina], "2026-11-27", HOY, ZONA)).toEqual([
+      { id: null, hora: "16:30", foco: "Repaso", estado: "programada" },
+    ]);
+    // El sábado la rutina no llama, y una rutina apagada tampoco.
+    expect(llamadasDelDia([], [rutina], "2026-11-28", HOY, ZONA)).toEqual([]);
+    expect(llamadasDelDia([], [{ ...rutina, active: false }], "2026-11-27", HOY, ZONA)).toEqual([]);
+  });
+
+  it("un día que pasó muestra solo las llamadas que existieron, con cómo terminaron", () => {
+    const sesiones: SesionDelDia[] = [
+      { id: "s1", status: "perdida", scheduled_at: "2026-11-24T19:30:00Z", focus: "Repaso", routine_id: "r1" },
+      { id: "s2", status: "reprogramada", scheduled_at: "2026-11-24T19:00:00Z", focus: null, routine_id: "r1" },
+      { id: "s3", status: "completada", scheduled_at: "2026-11-25T19:30:00Z", focus: null, routine_id: "r1" },
+    ];
+    // 19:30 UTC son las 16:30 en Montevideo. La reprogramada no se cuenta: reaparece en su horario nuevo.
+    expect(llamadasDelDia(sesiones, [rutina], "2026-11-24", HOY, ZONA)).toEqual([
+      { id: "s1", hora: "16:30", foco: "Repaso", estado: "perdida" },
+    ]);
+    expect(llamadasDelDia(sesiones, [rutina], "2026-11-25", HOY, ZONA)[0]?.estado).toBe("hecha");
+  });
+
+  it("si la llamada de una rutina ya existe ese día, no se repite", () => {
+    const sesiones: SesionDelDia[] = [
+      { id: "s4", status: "programada", scheduled_at: "2026-11-27T21:00:00Z", focus: "Repaso", routine_id: "r1" },
+    ];
+    expect(llamadasDelDia(sesiones, [rutina], "2026-11-27", HOY, ZONA)).toEqual([
+      { id: "s4", hora: "18:00", foco: "Repaso", estado: "programada" },
+    ]);
   });
 });

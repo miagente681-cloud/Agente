@@ -360,6 +360,20 @@ La persona pidió cambiar la estética: algo minimalista, con onda, y poder pasa
 | Error que apareció de paso | «Hechas hoy» comparaba la fecha con la zona horaria del dispositivo y «hoy» se calcula con la del perfil: cerca de la medianoche, o con el dispositivo en otra zona, lo recién hecho no aparecía. Ahora usan la misma. |
 | Cómo se revisó | Con capturas de la recorrida en un navegador de escritorio: ancho de computadora y de celular, tema oscuro y claro, con y sin color. No se vio en un teléfono de verdad. |
 
+## Tocar un día de la tira de la semana en Hoy (pedido el 26/11/2026)
+
+La persona quería tocar un día de la tira de la semana (arriba en Hoy) y ver lo que hay ese día; antes solo mostraba la semana.
+
+| Tema | Decisión |
+|---|---|
+| Qué se ve al tocar un día | Abajo, en lugar de la lista de hoy: el día como título, las llamadas del Agente de ese día, los proyectos que vencen, las tareas que caen ese día y las que se hicieron ese día. |
+| En qué día cae una tarea | El que elegiste para hacerla; si no lo elegiste, el de su fecha límite. Es la regla del Calendario y la de los puntos de la tira: un día con punto siempre muestra algo. La contra: una tarea que hacés el miércoles y vence el viernes aparece solo el miércoles. |
+| Días que vienen | Se pueden cargar tareas para ese día («Algo para ese día…»): quedan con esa fecha límite, igual que en el Calendario. Las llamadas salen de las rutinas, porque el programador crea cada llamada recién el mismo día. |
+| Días que pasaron | Lo que quedó sin hacer (en rojo, porque ya está atrasado), lo que se hizo y las llamadas que existieron, con «Hecha» o «Perdida». No se cargan tareas en un día que pasó. |
+| Volver | Tocando hoy en la tira, o «Hoy» o «Esta semana». Estos dos pasaron de pestañas a botones de alternar, porque con un día elegido ninguno queda apretado. |
+| Cómo se marca | El día elegido va relleno con el color principal; hoy, cuando no es el elegido, queda con un aro. |
+| La tira sigue siendo una sola semana | No se puede pasar a la semana siguiente desde ahí: para eso está el Calendario. |
+
 ## Despliegue
 
 - **Proyecto de Vercel `miagente`** (equipo MiAgente), enlazado a `miagente681-cloud/Agente`. El repo estaba vacío: el código de la fase 1 se trajo desde `Emontone21/MiAg` con su historial.

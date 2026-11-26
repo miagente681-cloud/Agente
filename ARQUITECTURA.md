@@ -54,7 +54,7 @@ src/
     auth/confirmar/         Enlace del correo de ingreso
     configurar/             Estado de las integraciones (solo para quien administra)
     (app)/                  Todo lo que requiere sesión; layout.tsx carga los datos y la navegación
-      hoy/ tablero/ calendario/ proyectos/   Vistas del panel
+      hoy/ tablero/ calendario/ proyectos/   Vistas del panel (en Hoy, cada día de la tira se toca: hoy/dia.tsx y lib/datos/dia.ts)
       chat/                 Chat escrito con el Agente
       llamada/[id]/         Pantalla de llamada o chat de voz
       bienvenida/           Entrevista inicial
@@ -305,6 +305,7 @@ La llamada en vivo se prueba en ese navegador con un micrófono de mentira (el d
 | Agregar un tipo de bloque o un grupo a los informes | `lib/informes/tipos.ts` y `bloques.ts` (lectura y reglas), `calcular.ts`, y si se dibuja, `escena.ts` (lo toman solos la pantalla y el PDF) |
 | Cambiar cómo se ve un gráfico o el PDF | Gráficos: `lib/informes/escena.ts` (vale para los dos). Solo pantalla: `components/informes/`. Solo PDF: `lib/informes/pdf.ts`. Mirar el resultado: `GUARDAR_PDF=/ruta/informe.pdf npx vitest run tests/informes-pdf.test.ts` |
 | Cambiar cómo se lee una tarea escrita en una línea (fecha, hora, prioridad) | `lib/datos/parsear-tarea.ts` (y sus pruebas en `tests/datos.test.ts`) |
+| Cambiar qué se ve al tocar un día de la tira de Hoy | `app/(app)/hoy/dia.tsx` (pantalla) y `lib/datos/dia.ts` (qué tareas y llamadas caen ese día, con pruebas en `tests/datos.test.ts`) |
 | Agregar un endpoint | `app/api/.../route.ts`: validar con `usuarioActual()`, y si gasta, `frenarSiHaceFalta()` con una clave nueva en `seguridad/frecuencia.ts` |
 | Sumar una integración con clave | Variable en `.env.example` y `CREDENCIALES.md`, entrada en `lib/integraciones.ts`, y que la función degrade si falta |
 | Cambiar cuándo se interrumpe al Agente al hablarle encima | `lib/voz/deteccion.ts` (umbrales, ventana, eco) y sus pruebas en `tests/deteccion.test.ts`. No se puede probar sin un micrófono real: después, probar en el teléfono |

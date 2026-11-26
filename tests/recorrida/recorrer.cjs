@@ -227,9 +227,37 @@ async function main() {
     await pagina.getByRole("heading", { name: /Hechas hoy/ }).waitFor();
     afirmar((await estado()).tasks.find((t) => t.title === "Retirar materiales").status === "hecha", "marcar como hecha desde la lista");
     await captura("03-hoy");
-    await pagina.getByRole("tab", { name: "Esta semana" }).click();
+    await pagina.getByRole("button", { name: "Esta semana", exact: true }).click();
     await captura("04-semana");
     ok("vista de la semana");
+
+    // La tira de la semana: cada día se toca y muestra lo que hay ese día.
+    const tira = pagina.getByRole("list", { name: "Esta semana" });
+    const botonDe = (fecha) => tira.getByRole("button", { name: new RegExp(`^\\S+ ${Number(fecha.slice(8))} de `) });
+    const esDomingo = new Date(fechaMvd(0) + "T12:00:00Z").getUTCDay() === 0;
+    // El domingo cierra la semana: no hay un día que venga en la tira, se mira uno que pasó.
+    const otroDia = esDomingo ? fechaMvd(-2) : fechaMvd(1);
+    await botonDe(otroDia).click();
+    afirmar((await botonDe(otroDia).getAttribute("aria-pressed")) === "true", "el día tocado en la tira queda elegido");
+    await pagina.getByRole("region", { name: /^\S+ \d+ de / }).getByRole("heading", { level: 2 }).first().waitFor();
+    afirmar((await pagina.getByRole("button", { name: "Llamar al electricista" }).count()) === 0, "un día de la tira no mezcla lo de hoy");
+    if (esDomingo) {
+      await pagina.getByRole("heading", { name: /Quedaron sin hacer/ }).waitFor();
+      await pagina.getByRole("button", { name: "Pagar la seña" }).waitFor();
+      ok("un día que pasó muestra lo que quedó sin hacer");
+    } else {
+      const altaDia = pagina.getByLabel("Nueva tarea", { exact: true });
+      await altaDia.fill("Comprar pintura");
+      await altaDia.press("Enter");
+      await pagina.getByRole("button", { name: "Comprar pintura" }).waitFor();
+      afirmar((await estado()).tasks.find((t) => t.title === "Comprar pintura")?.due_date === otroDia,
+        "una tarea cargada desde un día de la tira queda para ese día");
+    }
+    await captura("04-dia");
+    await botonDe(fechaMvd(0)).click();
+    await pagina.getByRole("button", { name: "Llamar al electricista" }).waitFor();
+    afirmar((await pagina.getByRole("button", { name: "Hoy", exact: true }).getAttribute("aria-pressed")) === "true",
+      "tocar hoy en la tira vuelve a la vista de hoy");
 
     console.log("Tablero");
     await pagina.goto(BASE + "/tablero");

@@ -421,24 +421,30 @@ export function ProveedorDatos({ children }: { children: ReactNode }) {
  * que pasan el filtro de área y proyecto.
  */
 export function useTareasVisibles(): Tarea[] {
-  const { tareas, proyectos, areas, filtro } = useDatos();
+  const { tareas } = useDatos();
+  const proyectos = useProyectosVisibles();
+  return useMemo(() => {
+    const permitidos = new Set(proyectos.map((p) => p.id));
+    return tareas.filter((t) => permitidos.has(t.project_id));
+  }, [tareas, proyectos]);
+}
+
+/** Los proyectos activos que pasan el filtro de área y proyecto. */
+export function useProyectosVisibles(): Proyecto[] {
+  const { proyectos, areas, filtro } = useDatos();
   return useMemo(() => {
     const areasVivas = new Set(areas.map((a) => a.id));
-    const permitidos = new Set(
-      proyectos
-        .filter((p) => p.status === "activo")
-        .filter((p) => !filtro.proyectoId || p.id === filtro.proyectoId)
-        .filter(
-          (p) =>
-            !filtro.areaId ||
-            (filtro.areaId === "sin-area"
-              ? !p.area_id || !areasVivas.has(p.area_id)
-              : p.area_id === filtro.areaId),
-        )
-        .map((p) => p.id),
-    );
-    return tareas.filter((t) => permitidos.has(t.project_id));
-  }, [tareas, proyectos, areas, filtro]);
+    return proyectos
+      .filter((p) => p.status === "activo")
+      .filter((p) => !filtro.proyectoId || p.id === filtro.proyectoId)
+      .filter(
+        (p) =>
+          !filtro.areaId ||
+          (filtro.areaId === "sin-area"
+            ? !p.area_id || !areasVivas.has(p.area_id)
+            : p.area_id === filtro.areaId),
+      );
+  }, [proyectos, areas, filtro]);
 }
 
 /** Orden por defecto de las listas: prioridad, fecha límite, orden manual. */

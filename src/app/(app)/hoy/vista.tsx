@@ -6,53 +6,68 @@ import { useEffect, useState } from "react";
 import { EstadoLlamadas } from "@/components/estado-llamadas";
 import { EstadoDatos, Filtro } from "@/components/filtro";
 import { AltaRapida } from "@/components/tareas/alta-rapida";
-import { ListaTareas } from "@/components/tareas/fila-tarea";
 import { EncabezadoPagina, Vacio } from "@/components/ui/varios";
 import { porHoraDelDia, porPrioridad, useDatos, useTareasVisibles } from "@/lib/datos/almacen";
+import { diaDeTarea } from "@/lib/datos/dia";
 import { domingoDe, fechaEnZona, fechaLarga, lunesDe, sumarDias } from "@/lib/datos/fechas";
 import type { Tarea } from "@/lib/datos/tipos";
+import { DetalleDia, Seccion } from "./dia";
 import { ProximaLlamada } from "./proxima-llamada";
 
-type Rango = "hoy" | "semana";
-
-function Seccion({ titulo, tono, tareas }: { titulo: string; tono?: "peligro"; tareas: Tarea[] }) {
-  if (!tareas.length) return null;
-  return (
-    <section className="flex flex-col gap-2">
-      <h2 className={`rotulo ${tono === "peligro" ? "!text-peligro" : ""}`}>
-        {titulo} <span className="font-normal opacity-70">· {tareas.length}</span>
-      </h2>
-      <ListaTareas tareas={tareas} />
-    </section>
-  );
-}
+/** Qué se ve abajo: lo de hoy, la semana entera, o un día que tocaste en la tira. */
+type Vista = { rango: "hoy" } | { rango: "semana" } | { rango: "dia"; dia: string };
 
 const LETRAS = ["L", "M", "M", "J", "V", "S", "D"];
 
-/** La semana en una tira: hoy resaltado, y un punto en los días que tienen tareas sin hacer. */
-function TiraSemana({ hoy, conTareas }: { hoy: string; conTareas: Set<string> }) {
+/**
+ * La semana en una tira, con un punto en los días que tienen tareas sin hacer.
+ * Cada día se puede tocar para ver lo que hay; el elegido va relleno y hoy,
+ * si no es el elegido, queda marcado con un aro.
+ */
+function TiraSemana({
+  hoy,
+  elegido,
+  conTareas,
+  alElegir,
+}: {
+  hoy: string;
+  elegido: string | null;
+  conTareas: Set<string>;
+  alElegir: (dia: string) => void;
+}) {
   const lunes = lunesDe(hoy);
   return (
-    <ol aria-label="Esta semana" className="grid h-full grid-cols-7 content-center justify-items-center rounded-xl bg-panel px-2 pb-2 pt-2.5">
+    <ol aria-label="Esta semana" className="grid h-full grid-cols-7 content-center rounded-xl bg-panel px-1.5 py-1.5">
       {LETRAS.map((letra, i) => {
         const dia = sumarDias(lunes, i);
         const esHoy = dia === hoy;
+        const esElegido = dia === elegido;
         return (
-          <li key={dia} aria-current={esHoy ? "date" : undefined} className="flex flex-col items-center gap-1">
-            <span aria-hidden className={`text-[11px] font-semibold ${esHoy ? "text-texto" : "text-texto-3"}`}>
-              {letra}
-            </span>
-            <span
-              className={`cifra flex h-9 w-9 items-center justify-center rounded-full text-[1.35rem] ${
-                esHoy ? "bg-acento text-sobre-acento" : "text-texto-2"
-              }`}
+          <li key={dia} aria-current={esHoy ? "date" : undefined} className="flex justify-center">
+            <button
+              type="button"
+              aria-pressed={esElegido}
+              aria-label={`${fechaLarga(dia)}${esHoy ? ", hoy" : ""}${conTareas.has(dia) ? ", con tareas" : ""}`}
+              onClick={() => alElegir(dia)}
+              className="group flex w-full max-w-12 flex-col items-center gap-1 rounded-lg py-1"
             >
-              <span className="sr-only">{fechaLarga(dia)}</span>
-              <span aria-hidden>{Number(dia.slice(8))}</span>
-            </span>
-            <span className={`h-1 w-1 rounded-full ${conTareas.has(dia) ? "bg-acento-texto" : ""}`}>
-              {conTareas.has(dia) ? <span className="sr-only">con tareas</span> : null}
-            </span>
+              <span aria-hidden className={`text-[11px] font-semibold ${esHoy || esElegido ? "text-texto" : "text-texto-3"}`}>
+                {letra}
+              </span>
+              <span
+                aria-hidden
+                className={`cifra flex h-9 w-9 items-center justify-center rounded-full text-[1.35rem] ${
+                  esElegido
+                    ? "bg-acento text-sobre-acento"
+                    : esHoy
+                      ? "border-[1.5px] border-acento-texto text-texto"
+                      : "text-texto-2 group-hover:bg-elevado group-hover:text-texto"
+                }`}
+              >
+                {Number(dia.slice(8))}
+              </span>
+              <span aria-hidden className={`h-1 w-1 rounded-full ${conTareas.has(dia) ? "bg-acento-texto" : ""}`} />
+            </button>
           </li>
         );
       })}
@@ -71,7 +86,12 @@ export function VistaHoy() {
   }, [esNueva, router]);
 
   const visibles = useTareasVisibles();
-  const [rango, setRango] = useState<Rango>("hoy");
+  const [vista, setVista] = useState<Vista>({ rango: "hoy" });
+  const rango = vista.rango;
+  // El día que se ve: el que tocaste en la tira, o hoy.
+  const elegido = vista.rango === "dia" ? vista.dia : vista.rango === "hoy" ? hoy : null;
+  // Tocar hoy en la tira es volver a la vista de hoy.
+  const elegirDia = (dia: string) => setVista(dia === hoy ? { rango: "hoy" } : { rango: "dia", dia });
 
   const abiertas = visibles.filter((t) => t.status !== "hecha").sort(porPrioridad);
   const vencidas = abiertas.filter((t) => t.due_date && t.due_date < hoy);
@@ -103,15 +123,18 @@ export function VistaHoy() {
   // Días de esta semana con algo sin hacer, para marcarlos en la tira.
   const conTareas = new Set(
     abiertas.flatMap((t) => {
-      const dia = t.plan_fecha ?? t.due_date;
+      const dia = diaDeTarea(t);
       return dia ? [dia] : [];
     }),
   );
 
+  // Un día de la tira tiene su propio aviso cuando no hay nada (en DetalleDia).
   const nada =
     rango === "hoy"
       ? !vencidas.length && !deHoy.length && !enCurso.length && !hechasHoy.length
-      : !vencidas.length && !deHoy.length && !dias.some((d) => delDia(d).length);
+      : rango === "semana"
+        ? !vencidas.length && !deHoy.length && !dias.some((d) => delDia(d).length)
+        : false;
 
   return (
     <>
@@ -123,19 +146,19 @@ export function VistaHoy() {
           <EstadoLlamadas />
           <div className="flex flex-col gap-2.5 md:flex-row md:items-stretch">
             <div className="md:w-[26rem] md:shrink-0">
-              <TiraSemana hoy={hoy} conTareas={conTareas} />
+              <TiraSemana hoy={hoy} elegido={elegido} conTareas={conTareas} alElegir={elegirDia} />
             </div>
             <ProximaLlamada />
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div role="tablist" aria-label="Rango" className="flex rounded-full bg-panel p-1">
+            {/* Botones de alternar, no pestañas: con un día de la tira elegido, ninguno queda apretado. */}
+            <div role="group" aria-label="Rango" className="flex rounded-full bg-panel p-1">
               {(["hoy", "semana"] as const).map((r) => (
                 <button
                   key={r}
                   type="button"
-                  role="tab"
-                  aria-selected={rango === r}
-                  onClick={() => setRango(r)}
+                  aria-pressed={rango === r}
+                  onClick={() => setVista({ rango: r })}
                   className={`h-9 rounded-full px-3.5 text-[13px] font-medium ${
                     rango === r ? "bg-acento text-sobre-acento" : "text-texto-2 hover:text-texto"
                   }`}
@@ -154,23 +177,23 @@ export function VistaHoy() {
             <Filtro />
           </div>
 
-          <AltaRapida fechaFija={hoy} marcador="Algo para hoy…" />
-
-          <Seccion titulo="Vencidas" tono="peligro" tareas={vencidas} />
-          <Seccion titulo="Hoy" tareas={deHoy} />
-          {rango === "hoy" ? (
-            <>
-              <Seccion titulo="En curso" tareas={enCurso} />
-              <Seccion titulo="Hechas hoy" tareas={hechasHoy} />
-            </>
+          {vista.rango === "dia" ? (
+            <DetalleDia dia={vista.dia} />
           ) : (
-            dias.map((d) => (
-              <Seccion
-                key={d}
-                titulo={fechaLarga(d)}
-                tareas={delDia(d)}
-              />
-            ))
+            <>
+              <AltaRapida fechaFija={hoy} marcador="Algo para hoy…" />
+
+              <Seccion titulo="Vencidas" tono="peligro" tareas={vencidas} />
+              <Seccion titulo="Hoy" tareas={deHoy} />
+              {rango === "hoy" ? (
+                <>
+                  <Seccion titulo="En curso" tareas={enCurso} />
+                  <Seccion titulo="Hechas hoy" tareas={hechasHoy} />
+                </>
+              ) : (
+                dias.map((d) => <Seccion key={d} titulo={fechaLarga(d)} tareas={delDia(d)} />)
+              )}
+            </>
           )}
 
           {nada ? (
